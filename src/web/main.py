@@ -125,6 +125,37 @@ class SimpleAuthMiddleware(BaseHTTPMiddleware):
 if _AUTH_USERNAME:
     app.add_middleware(SimpleAuthMiddleware)
 
+
+class DynamicNoStore:
+    """纯 ASGI 中间件：动态响应加 `Cache-Control: no-store`，静态资源不加。
+
+    这是实时行情看板——HTML 一旦被浏览器缓存，用户会看到过时价格，且表现成
+    "点了链接却像没生效"。静态构建产物不变，保留缓存仍有收益。
+
+    用纯 ASGI 而不是 BaseHTTPMiddleware：后者会包裹并缓冲响应体，
+    与 StaticFiles 的 FileResponse（流式）组合容易出问题，而这里只需改写
+    一个响应头，没必要冒那个风险。
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope.get("path", "").startswith("/static/"):
+            return await self.app(scope, receive, send)
+
+        async def send_with_no_store(message):
+            if message["type"] == "http.response.start":
+                headers = message.setdefault("headers", [])
+                if not any(k.lower() == b"cache-control" for k, _ in headers):
+                    headers.append((b"cache-control", b"no-store"))
+            await send(message)
+
+        await self.app(scope, receive, send_with_no_store)
+
+
+app.add_middleware(DynamicNoStore)
+
 # 静态文件
 static_dir = Path(__file__).parent / "static"
 static_dir.mkdir(exist_ok=True)
@@ -162,7 +193,8 @@ def api_health():
     if cached is not None and now - _health_cache["ts"] < _HEALTH_TTL_SECONDS:
         return cached
 
-    health = {"sina": False, "realtime": False, "baostock": False, "tushare": False}
+    health = {"sina": False, "realtime": False, "history": False,
+              "baostock": False, "tushare": False}
     from ..runtime import run_with_timeout
 
     def _probe_sina() -> bool:
@@ -180,6 +212,20 @@ def api_health():
         snap = fetch_realtime(["600519"]).get("600519")
         return snap is not None and snap.close > 0
 
+    def _probe_history() -> bool:
+        """历史日线是否拿得到（HTTP 源为主，与 K 线/选股页面同一条链路）。
+
+        baostock 只是兜底：不同托管节点上两者可用性并不一致（一个通、另一个不通
+        都出现过），必须分开上报，不能合并成一个布尔值。
+        """
+        from datetime import datetime, timedelta
+
+        from ..data.kline_http import fetch_history
+
+        end = datetime.now().strftime("%Y-%m-%d")
+        start = (datetime.now() - timedelta(days=20)).strftime("%Y-%m-%d")
+        return bool(fetch_history("600519", start, end))
+
     def _probe_baostock() -> bool:
         from ..data.baostock_utils import close_bs, open_bs
         bs = open_bs(timeout=8.0)
@@ -196,6 +242,10 @@ def api_health():
         pass
     try:
         health["realtime"] = bool(run_with_timeout(_probe_realtime, 20, False))
+    except Exception:
+        pass
+    try:
+        health["history"] = bool(run_with_timeout(_probe_history, 15, False))
     except Exception:
         pass
     try:

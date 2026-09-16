@@ -212,11 +212,18 @@
         var el = document.getElementById('dsStatus');
         fetch('/api/health').then(function(r) { return r.json(); }).then(function(h) {
             var parts = [];
-            parts.push(h.sina ? '🟢 行情' : '🔴 行情');
-            parts.push(h.baostock ? '🟢 K线' : '🔴 K线');
+            // 行情 = 实时价：多源链（腾讯优先、新浪兜底）；h.sina 是纯新浪单源，
+            // 两者都会在部分节点单边失效，任一可用即算行情可用。
+            var rt = h.realtime || h.sina;
+            // 历史 = 日线/PE/PB：HTTP 源为主，baostock 只是兜底。
+            var hist = h.history || h.baostock;
+            parts.push(rt ? '🟢 行情' : '🔴 行情');
+            parts.push(hist ? '🟢 历史' : '🔴 历史');
             parts.push(h.tushare ? '🟢 财务' : '⚪ 财务');
             el.textContent = parts.join(' ');
-            el.title = '数据源: ' + parts.join(', ');
+            el.title = '数据源　行情(实时价)：' + (rt ? '可用' : '不可用')
+                     + '　历史(日线/PE/PB)：' + (hist ? '可用' : '不可用')
+                     + '　财务(tushare)：' + (h.tushare ? '可用' : '未配置');
         }).catch(function() {
             el.textContent = '⚠ 离线';
         });
