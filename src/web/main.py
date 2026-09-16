@@ -266,6 +266,19 @@ def api_health():
     return health
 
 
+@app.get("/api/ping")
+def api_ping():
+    """保活探针：只证明进程还在，**不做任何外部网络探测**。
+
+    前端页面开着时会定时打这个端点。托管平台会把闲置应用休眠，休眠后页面内的
+    跳转请求会被挂住，用户看到的表现就是"点了没反应"——保活用来避免这个。
+
+    刻意与 /api/health 分开：health 会真的去探测外部数据源（秒级），
+    不适合每两分钟被触发一次。
+    """
+    return {"ok": True}
+
+
 @app.get("/api/news/{symbol}")
 def api_stock_news(symbol: str, days: int = 5):
     """获取个股新闻/公告。"""

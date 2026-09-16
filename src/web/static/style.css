@@ -1685,3 +1685,50 @@ a:hover {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* ── 站内跳转反馈遮罩（见 base.html 的 navFeedback） ──
+   整页导航期间若请求被挂住（应用被平台休眠 / 冷启动），原界面毫无变化，
+   用户会以为按钮坏了。这里给出可见反馈并明确提示可能在唤醒。
+   pointer-events:none 是硬要求：绝不能让加载态拦住用户的后续点击。 */
+#navLoading {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  pointer-events: none;
+  animation: fadeIn 0.15s var(--ease-out);
+}
+
+.nav-loading-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 22px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.nav-loading-spin {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: navSpin 0.7s linear infinite;
+}
+
+@keyframes navSpin {
+  to { transform: rotate(360deg); }
+}

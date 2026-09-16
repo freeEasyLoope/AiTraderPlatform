@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AITrader · A股模拟投资</title>
+    <!-- 内联 SVG 图标：项目原本没有 favicon，浏览器自动请求 /favicon.ico 会 404，
+         控制台总有一条噪音错误；顺带让分享出去的链接有正经标签页图标。
+         纯图形不含文字，不依赖字体。 -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%230f172a'/%3E%3Crect%20x='6'%20y='18'%20width='5'%20height='8'%20rx='1.5'%20fill='%2338bdf8'/%3E%3Crect%20x='13.5'%20y='12'%20width='5'%20height='14'%20rx='1.5'%20fill='%2338bdf8'/%3E%3Crect%20x='21'%20y='6'%20width='5'%20height='20'%20rx='1.5'%20fill='%23818cf8'/%3E%3C/svg%3E">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <link rel="stylesheet" href="/static/style.css">
     <style>
@@ -227,6 +231,63 @@
         }).catch(function() {
             el.textContent = '⚠ 离线';
         });
+    })();
+
+    // ── 应用保活 ──
+    // PocketBay 会把闲置应用休眠（再次访问时先显示"此应用正在休眠"）。若休眠发生在
+    // 用户浏览过程中，页面内的跳转请求会被挂住，表现就是"点了没反应"。
+    // 页面可见且用户仍在操作时定时打一次轻量端点，避免中途被休眠；
+    // 连续 30 分钟无任何操作则停止保活，让应用正常休眠（不长期占资源）。
+    (function keepAlive() {
+        var IDLE_LIMIT = 30 * 60 * 1000;
+        var PING_INTERVAL = 120 * 1000;
+        var lastActive = Date.now();
+        ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(function (ev) {
+            window.addEventListener(ev, function () { lastActive = Date.now(); }, { passive: true });
+        });
+        function ping() { fetch('/api/ping', { cache: 'no-store' }).catch(function () {}); }
+        setInterval(function () {
+            if (document.hidden) return;
+            if (Date.now() - lastActive > IDLE_LIMIT) return;
+            ping();
+        }, PING_INTERVAL);
+        // 从后台切回来时立刻探一次，把可能已休眠的应用叫醒，避免紧接着的点击被挂住
+        document.addEventListener('visibilitychange', function () {
+            if (!document.hidden) { lastActive = Date.now(); ping(); }
+        });
+    })();
+
+    // ── 站内跳转反馈 ──
+    // 整页导航期间若请求被挂住（应用休眠 / 冷启动），原先界面毫无变化，用户会以为
+    // 按钮坏了。这里点击站内链接立即给出可见反馈，超过 6s 明确提示可能正在唤醒。
+    // 遮罩设 pointer-events:none 且 20s 后自动消失，绝不会把用户困在页面上。
+    (function navFeedback() {
+        var overlay = null;
+        function show() {
+            if (overlay) return;
+            overlay = document.createElement('div');
+            overlay.id = 'navLoading';
+            overlay.innerHTML = '<div class="nav-loading-box"><span class="nav-loading-spin"></span>'
+                              + '<span id="navLoadingMsg">正在打开…</span></div>';
+            document.body.appendChild(overlay);
+            setTimeout(function () {
+                var m = document.getElementById('navLoadingMsg');
+                if (m) m.textContent = '应用正在唤醒，请稍候…';
+            }, 6000);
+            setTimeout(function () {
+                if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+                overlay = null;
+            }, 20000);
+        }
+        document.addEventListener('click', function (e) {
+            if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+            var a = e.target && e.target.closest ? e.target.closest('a') : null;
+            if (!a) return;
+            if (a.target === '_blank' || a.hasAttribute('download')) return;
+            var href = a.getAttribute('href') || '';
+            if (href.charAt(0) !== '/' || href.indexOf('//') === 0) return;
+            show();
+        }, true);
     })();
     </script>
 </body>
