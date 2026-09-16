@@ -208,3 +208,54 @@ def api_stock_news(symbol: str, days: int = 5):
     from ..data.news_client import get_stock_news
     news = get_stock_news(symbol, days=days)
     return {"ok": True, "news": news}
+
+
+# 连通性体检目标：固定清单、不接受入参，避免变成 SSRF 跳板。
+# 排查"线上拿不到行情"时按 DNS → TCP → 真实数据 三层定位。
+_DIAG_TARGETS = [
+    ("example.com", 443, "国际站点基线（验证出网是否可用）"),
+    ("hq.sinajs.cn", 80, "新浪实时行情"),
+    ("quotes.money.163.com", 80, "网易历史日线"),
+    ("push2his.eastmoney.com", 443, "东方财富（akshare 路径）"),
+    ("public-api.baostock.com", 10030, "baostock 服务端口（真实端点）"),
+    ("api.tushare.pro", 443, "tushare"),
+    ("query1.finance.yahoo.com", 443, "Yahoo Finance（A股代码 600519.SS，境外备用候选）"),
+]
+
+
+@app.get("/api/diag")
+def api_diag():
+    """数据源连通性体检：区分 DNS 失败 / TCP 不通 / 通了但取不到数据。"""
+    import socket
+    import time as _time
+
+    from ..runtime import run_with_timeout
+
+    hosts = []
+    for host, port, label in _DIAG_TARGETS:
+        item: dict = {"host": host, "port": port, "label": label}
+
+        def _dns(h: str = host, p: int = port) -> bool:
+            socket.getaddrinfo(h, p, proto=socket.IPPROTO_TCP)
+            return True
+
+        t0 = _time.time()
+        try:
+            item["dns"] = "ok" if run_with_timeout(_dns, 6, False) else "timeout"
+        except Exception as e:
+            item["dns"] = f"fail:{type(e).__name__}"
+        item["dns_ms"] = round((_time.time() - t0) * 1000)
+
+        def _tcp(h: str = host, p: int = port) -> bool:
+            with socket.create_connection((h, p), timeout=5):
+                return True
+
+        t0 = _time.time()
+        try:
+            item["tcp"] = "ok" if run_with_timeout(_tcp, 7, False) else "timeout"
+        except Exception as e:
+            item["tcp"] = f"fail:{type(e).__name__}"
+        item["tcp_ms"] = round((_time.time() - t0) * 1000)
+        hosts.append(item)
+
+    return {"ok": True, "hosts": hosts}

@@ -84,9 +84,9 @@ _MARKET_ENV_RETRY_MAX = 1800.0  # 退避上限 30 分钟（数据源长期不可
 _MARKET_ENV_COMPUTE = 120.0    # 单次后台计算的等待上限
 _MARKET_ENV_DEADLINE = 180.0   # 后台刷新超时该时长视为卡死，允许重开
 _MARKET_ENV_PLACEHOLDER = {
-    "status": "unknown", "label": "行情加载中", "needle_pos": 50,
+    "status": "unknown", "label": "行情获取中", "needle_pos": 50,
     "trend": "?", "volatility": "?", "index_price": 0.0,
-    "desc": "正在后台获取指数数据…",
+    "desc": "正在后台获取指数数据；若长时间保持此状态，说明当前运行环境无法访问 A 股数据源",
 }
 _market_env_state: dict = {
     "data": None, "ts": 0.0, "last": None,
