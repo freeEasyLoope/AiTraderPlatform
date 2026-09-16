@@ -1,0 +1,112 @@
+# ═══════════════════════════════════════════════════════════════
+# 历史危机场景定义 — 用于风险情景模拟
+# ═══════════════════════════════════════════════════════════════
+#
+# 每个场景定义了一个"如果发生，组合会怎样"的冲击参数。
+# 基于真实历史事件的粗略近似，用于教育目的而非精确预测。
+
+scenarios:
+  - id: crash_2008
+    name: "2008 全球金融危机"
+    icon: "🏦"
+    description: "雷曼兄弟破产引发的全球金融海啸。A股从6124跌至1664，跌幅超70%。"
+    duration: "12个月"
+    shocks:
+      stock_index: -0.65     # 大盘股平均跌幅
+      stock_small: -0.75     # 小盘股平均跌幅
+      bond: +0.08            # 国债避险上涨
+      gold: -0.05            # 黄金小幅下跌（流动性危机）
+      volatility_mult: 4.0   # 波动率放大倍数
+    lessons:
+      - "现金为王——危机中流动性最重要"
+      - "分散化在系统性风险面前效果有限"
+      - "杠杆是危机的放大器"
+
+  - id: crash_2015
+    name: "2015 A股股灾"
+    icon: "📉"
+    description: "杠杆牛市崩塌，千股跌停。上证从5178跌至2850，创业板腰斩。"
+    duration: "3个月"
+    shocks:
+      stock_index: -0.45
+      stock_small: -0.60     # 中小创跌幅更大
+      bond: +0.03
+      gold: +0.02
+      volatility_mult: 5.0
+    lessons:
+      - "杠杆是把双刃剑——上涨时助推，下跌时踩踏"
+      - "熔断机制可能加剧恐慌"
+      - "不要试图抄飞刀——等企稳再入场"
+
+  - id: trade_war_2018
+    name: "2018 中美贸易战"
+    icon: "🌏"
+    description: "中美关税升级，A股全年阴跌。上证从3587跌至2449，全年-25%。"
+    duration: "12个月"
+    shocks:
+      stock_index: -0.25
+      stock_small: -0.35
+      bond: +0.10            # 利率下行利好债券
+      gold: +0.08
+      volatility_mult: 2.5
+      sector_tech: -0.40     # 科技股受冲击最大
+      sector_consumer: -0.20
+    lessons:
+      - "地缘政治风险难以预测但影响深远"
+      - "内需消费股相对抗跌"
+      - "黄金在不确定性中的避险价值"
+
+  - id: covid_2020
+    name: "2020 新冠疫情冲击"
+    icon: "🦠"
+    description: "疫情爆发导致全球市场暴跌，但随后V型反弹。上证春节后开盘跌近8%。"
+    duration: "2个月（暴跌），全年V型反弹"
+    shocks:
+      stock_index: -0.12     # 暴跌后迅速反弹
+      stock_small: -0.15
+      bond: +0.05
+      gold: +0.12
+      volatility_mult: 3.5
+      sector_medical: +0.20  # 医药逆势上涨
+      sector_travel: -0.35   # 旅游航空重创
+    lessons:
+      - "黑天鹅不可预测——所以永远不要满仓"
+      - "危机中也有机会（医药、在线办公）"
+      - "政府刺激政策会推动V型反弹"
+
+  - id: property_2021
+    name: "2021-2023 地产链去杠杆"
+    icon: "🏗"
+    description: "三道红线+恒大危机，地产链持续下行。上证50最大回撤超40%。"
+    duration: "24个月"
+    shocks:
+      stock_index: -0.20
+      stock_small: -0.25
+      bond: +0.06
+      gold: +0.10
+      volatility_mult: 2.0
+      sector_property: -0.55  # 地产股腰斩
+      sector_bank: -0.30      # 银行受拖累
+      sector_material: -0.35  # 建材受拖累
+    lessons:
+      - "行业集中度风险——重仓一个行业可能致命"
+      - "政策转向是最大的基本面变化"
+      - "价值陷阱——PE低可能是因为盈利即将崩塌"
+
+  - id: rate_hike_2022
+    name: "2022 美联储暴力加息"
+    icon: "🏛"
+    description: "美联储一年加息425bp，全球资产重定价。成长股估值大幅压缩。"
+    duration: "12个月"
+    shocks:
+      stock_index: -0.18
+      stock_small: -0.30     # 成长股受冲击更大
+      bond: -0.05            # 加息利空债券
+      gold: -0.03
+      volatility_mult: 2.5
+      sector_tech: -0.35
+      sector_bank: +0.05     # 银行受益于高利率
+    lessons:
+      - "利率是资产定价的锚——加息=杀估值"
+      - "高PE成长股对利率最敏感"
+      - "银行和商品在加息周期中相对抗跌"

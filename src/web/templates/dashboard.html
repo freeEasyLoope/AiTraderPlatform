@@ -1,0 +1,348 @@
+{% extends "base.html" %}
+{% block content %}
+
+<!-- ═══════════════════════════════════════════════════════════════
+     AITrader Dashboard — 统一总览
+     ═══════════════════════════════════════════════════════════════ -->
+
+<div class="section-header">
+    <div>
+        <h1>⊞ 交易总览 <span class="text-muted" style="font-size:13px;font-weight:400">· {{ today }}</span></h1>
+        <p class="page-subtitle">六位操盘手 · 双组对抗 · 实时模拟</p>
+    </div>
+    <div class="btn-group">
+        <button class="help-toggle" onclick="document.getElementById('helpBox').classList.toggle('show')">? 新手引导</button>
+        <a href="/strategies" class="btn btn-ghost btn-sm">策略实验室 →</a>
+    </div>
+</div>
+
+<!-- ── 新手帮助 ── -->
+<div class="help-box" id="helpBox">
+    <p><strong>📊 欢迎来到 AITrader！</strong> 这不是一个给你买卖信号的工具，而是一个<strong>让你理解不同投资策略如何运作</strong>的模拟实验室。</p>
+    <p>• <strong>总资产</strong>：所有操盘手的现金+持仓市值。涨了说明策略在赚钱。</p>
+    <p>• <strong>市场环境</strong>：顶部横条告诉你当前 A 股是偏强、偏弱还是震荡。策略表现的好坏 70% 由市场环境决定。</p>
+    <p>• <strong>收益曲线</strong>：六条线代表六个操盘手。谁在上面谁跑得好——但别只看收益，也要看回撤。</p>
+    <p>• <strong>操盘手排名</strong>：按累计收益率排序。点击名字进入详情页，看他们买了什么、为什么买。</p>
+    <p style="margin-top:8px">💡 <strong>新手提示</strong>：先花 3 分钟看看<a href="/strategies" style="color:var(--accent)">策略实验室</a>里的策略画像，了解每个策略的性格——然后你就能理解为什么有些策略在涨、有些在跌。</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     MARKET ENVIRONMENT STRIP
+     ═══════════════════════════════════════════════ -->
+<div class="market-env">
+    <span style="font-size:13px;font-weight:600;color:var(--text2);white-space:nowrap">市场环境</span>
+    <div class="env-gauge">
+        <div class="needle" style="left:{{ market_env.needle_pos }}%"></div>
+    </div>
+    <span class="env-label env-{{ market_env.status }}">{{ market_env.label }}</span>
+    <span class="nav-divider" style="margin:0 4px"></span>
+    <div class="env-meta">
+        <span>📈 沪深300 <strong class="env-{{ market_env.status }}">{{ market_env.trend }}</strong></span>
+        <span>📊 波动 <strong>{{ market_env.volatility }}</strong></span>
+        <span>💹 指数 <strong>¥{{ "%.2f"|format(market_env.index_price) }}</strong></span>
+    </div>
+    <span style="font-size:11px;color:var(--text3);margin-left:auto" title="{{ market_env.desc }}">{{ market_env.desc[:60] }}{% if market_env.desc|length > 60 %}...{% endif %}</span>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     OVERVIEW STATS
+     ═══════════════════════════════════════════════ -->
+<div class="stats">
+    <div class="stat">
+        <div class="value cyan">¥{{ "%.0f"|format(total_value) }}</div>
+        <div class="label">总资产</div>
+        <div class="hint">初始 ¥{{ "%.0f"|format(short_capital + long_capital) }}</div>
+    </div>
+    <div class="stat">
+        <div class="value {{ 'green' if total_return >= 0 else 'red' }}">{{ "%+.2f"|format(total_return) }}%</div>
+        <div class="label">综合收益</div>
+        <div class="delta {{ 'green' if total_return >= 0 else 'red' }}">
+            {{ '↑' if total_return >= 0 else '↓' }} {{ '盈利中' if total_return >= 0 else '亏损中' }}
+        </div>
+    </div>
+    <div class="stat">
+        <div class="value">{{ today_orders }}</div>
+        <div class="label">今日成交</div>
+        <div class="hint">{{ '有交易' if today_orders > 0 else '无操作' }}</div>
+    </div>
+    <div class="stat">
+        <div class="value">
+            <span class="green">{{ active_short }}</span>/<span class="purple">{{ active_long }}</span>
+        </div>
+        <div class="label">活跃策略</div>
+        <div class="hint">短线/长线</div>
+    </div>
+    <div class="stat">
+        <div class="value {{ 'green' if best and best.return_pct >= 0 else 'red' }}">{{ best.name if best else '-' }}</div>
+        <div class="label">最佳操盘手</div>
+        <div class="hint {{ 'green' if best and best.return_pct >= 0 else 'red' }}">{{ "%+.1f"|format(best.return_pct) if best else '' }}%</div>
+    </div>
+</div>
+
+{% if total_return <= -5 %}
+<div class="tip-card">
+    <strong>⚠ 注意：</strong>综合亏损超过 5%。建议查看<a href="/strategies" style="color:var(--accent)">策略实验室</a>回测不同参数，或查看<a href="/reports" style="color:var(--accent)">AI 周报</a>获取优化建议。
+</div>
+{% endif %}
+
+<!-- ═══════════════════════════════════════════════
+     GROUP TABS + CHARTS + RANKINGS
+     ═══════════════════════════════════════════════ -->
+<div class="tabs" style="margin-top:4px">
+    <button class="tab-btn {{ 'active' if show_group == 'short' else '' }}" onclick="switchDashboard('short')">
+        ⚡ 短线组 <span class="text-muted" style="font-weight:400;text-transform:none">· 技术面 · ¥{{ "%.0f"|format(short_total_value) }}</span>
+    </button>
+    <button class="tab-btn {{ 'active' if show_group == 'long' else '' }}" onclick="switchDashboard('long')">
+        🏛 长线组 <span class="text-muted" style="font-weight:400;text-transform:none">· 基本面 · ¥{{ "%.0f"|format(long_total_value) }}</span>
+    </button>
+</div>
+
+<!-- 短线看板 -->
+<div class="dash-panel" id="panel-short" style="display:{{ 'block' if show_group == 'short' else 'none' }}">
+    <div class="stats" style="grid-template-columns:repeat(auto-fit, minmax(140px, 1fr))">
+        <div class="stat" style="background:var(--bg)">
+            <div class="value cyan">¥{{ "%.0f"|format(short_total_value) }}</div>
+            <div class="label">组总资产</div>
+            <div class="hint">初始 ¥{{ "%.0f"|format(short_capital) }}</div>
+        </div>
+        <div class="stat" style="background:var(--bg)">
+            <div class="value {{ 'green' if short_return >= 0 else 'red' }}">{{ "%+.1f"|format(short_return) }}%</div>
+            <div class="label">组收益率</div>
+        </div>
+    </div>
+
+    <div class="grid-2">
+        <div class="card">
+            <h2>收益走势（30天）</h2>
+            <p class="text-muted mb-8">三条线 = 三位短线操盘手。上升=赚钱，下降=亏钱，平线=空仓。</p>
+            <div class="chart-wrap"><canvas id="chartShort"></canvas></div>
+        </div>
+        <div class="card">
+            <h2>操盘手排名</h2>
+            <p class="text-muted mb-8">点击名称查看详细持仓。收益率不是唯一标准。</p>
+            {% for r in short_traders %}
+            <div class="rank-strip" onclick="window.location='/trader/{{ r.id }}'">
+                <span class="rank-num">{{ loop.index }}</span>
+                <div class="rank-info">
+                    <div class="rank-name">{{ r.name }}</div>
+                    <div class="rank-strategy">{{ r.strategy }}</div>
+                </div>
+                <div class="rank-return">
+                    <div class="val {{ 'green' if r.return_pct >= 0 else 'red' }}">{{ "%+.1f"|format(r.return_pct) }}%</div>
+                    <div class="lbl">¥{{ "%.0f"|format(r.total_value) }}</div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- 长线看板 -->
+<div class="dash-panel" id="panel-long" style="display:{{ 'block' if show_group == 'long' else 'none' }}">
+    <div class="stats" style="grid-template-columns:repeat(auto-fit, minmax(140px, 1fr))">
+        <div class="stat" style="background:var(--bg)">
+            <div class="value purple">¥{{ "%.0f"|format(long_total_value) }}</div>
+            <div class="label">组总资产</div>
+            <div class="hint">初始 ¥{{ "%.0f"|format(long_capital) }}</div>
+        </div>
+        <div class="stat" style="background:var(--bg)">
+            <div class="value {{ 'green' if long_return >= 0 else 'red' }}">{{ "%+.1f"|format(long_return) }}%</div>
+            <div class="label">组收益率</div>
+        </div>
+    </div>
+
+    <div class="grid-2">
+        <div class="card">
+            <h2>收益走势（30天）</h2>
+            <p class="text-muted mb-8">三条线 = 三位长线操盘手。长线策略换手率低，曲线相对平滑。</p>
+            <div class="chart-wrap"><canvas id="chartLong"></canvas></div>
+        </div>
+        <div class="card">
+            <h2>操盘手排名</h2>
+            <p class="text-muted mb-8">点击名称查看详细持仓。注意回撤和稳定性。</p>
+            {% for r in long_traders %}
+            <div class="rank-strip" onclick="window.location='/trader/{{ r.id }}'">
+                <span class="rank-num">{{ loop.index }}</span>
+                <div class="rank-info">
+                    <div class="rank-name">{{ r.name }}</div>
+                    <div class="rank-strategy">{{ r.strategy }}</div>
+                </div>
+                <div class="rank-return">
+                    <div class="val {{ 'green' if r.return_pct >= 0 else 'red' }}">{{ "%+.1f"|format(r.return_pct) }}%</div>
+                    <div class="lbl">¥{{ "%.0f"|format(r.total_value) }}</div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     RECENT TRADES
+     ═══════════════════════════════════════════════ -->
+<div class="card">
+    <div class="card-header">
+        <h2>最近交易记录</h2>
+        <a href="/reports" class="text-sm link">查看全部 →</a>
+    </div>
+    <p class="text-muted mb-8">
+        买入(BUY)：策略认为该股票被低估或有上涨趋势。卖出(SELL)：止盈、止损或趋势反转。
+        <span class="badge badge-fill" style="margin-left:4px">成交</span> = 撮合成功，
+        <span class="badge badge-rej">拒绝</span> = 资金不足/涨停/T+1 限制。
+    </p>
+    <div class="table-wrap"><table>
+        <thead><tr><th>操盘手</th><th>股票</th><th>方向</th><th>数量</th><th>成交价</th><th>状态</th><th>交易理由</th><th>日期</th></tr></thead>
+        <tbody>
+        {% for o in recent %}
+        <tr>
+            <td><a href="/trader/{{ o.trader_id or '' }}" class="link">{{ o.trader }}</a></td>
+            <td><span onclick="openStock('{{ o.symbol }}')" class="stock-link link" title="查看详情">{{ o.symbol_name }}</span></td>
+            <td>
+                <span class="badge {{ 'badge-buy' if o.type == 'buy' else 'badge-sell' }}">
+                    {{ '买入' if o.type == 'buy' else '卖出' }}
+                </span>
+            </td>
+            <td>{{ o.shares }}股</td>
+            <td>¥{{ "%.2f"|format(o.price) }}</td>
+            <td>
+                {% if o.status == 'filled' %}
+                <span class="badge badge-fill">成交</span>
+                {% else %}
+                <span class="badge badge-rej" title="拒绝原因: {{ o.reject_reason or '未知' }}">拒绝</span>
+                {% endif %}
+            </td>
+            <td style="font-size:12px;color:var(--text2);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+                title="{{ o.reason or '' }}">{{ o.reason or '-' }}</td>
+            <td style="color:var(--text3);font-size:12px">{{ o.date }}</td>
+        </tr>
+        {% endfor %}
+        {% if not recent %}
+        <tr><td colspan="8" style="text-align:center;color:var(--text3);padding:20px">暂无交易记录，等待操盘手建仓</td></tr>
+        {% endif %}
+        </tbody>
+    </table></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     QUICK LINKS
+     ═══════════════════════════════════════════════ -->
+<div class="card card-glass">
+    <h2>快速入口</h2>
+    <div class="grid-4">
+        <a href="/strategies" style="text-decoration:none">
+            <div class="stat">
+                <div class="value" style="font-size:32px">📈</div>
+                <div class="label" style="color:var(--accent)">历史回测</div>
+                <div class="hint">验证策略在不同时期的表现</div>
+            </div>
+        </a>
+        <a href="/recommendations" style="text-decoration:none">
+            <div class="stat">
+                <div class="value" style="font-size:32px">💡</div>
+                <div class="label" style="color:var(--accent)">自选分析</div>
+                <div class="hint">六位操盘手对你关注标的的看法</div>
+            </div>
+        </a>
+        <a href="/control" style="text-decoration:none">
+            <div class="stat">
+                <div class="value" style="font-size:32px">⚙</div>
+                <div class="label" style="color:var(--accent)">参数控制</div>
+                <div class="hint">调整止损/仓位等策略参数</div>
+            </div>
+        </a>
+        <a href="/reports" style="text-decoration:none">
+            <div class="stat">
+                <div class="value" style="font-size:32px">🤖</div>
+                <div class="label" style="color:var(--accent)">AI 周报</div>
+                <div class="hint">每周智能分析和优化建议</div>
+            </div>
+        </a>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Dashboard Tab Switching ──
+function switchDashboard(group) {
+    document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+    document.querySelectorAll('.dash-panel').forEach(function(p) { p.style.display = 'none'; });
+
+    if (group === 'short') {
+        document.querySelector('.tab-btn:nth-child(1)').classList.add('active');
+        document.getElementById('panel-short').style.display = 'block';
+    } else {
+        document.querySelector('.tab-btn:nth-child(2)').classList.add('active');
+        document.getElementById('panel-long').style.display = 'block';
+    }
+}
+
+// ── Chart Helper ──
+var _v = function(name, fallback) {
+    var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+};
+
+var chartColors = ['#38bdf8','#22c55e','#a78bfa','#fbbf24','#f472b6','#fb923c'];
+
+function createGroupChart(canvasId, chartData, colorOffset) {
+    var ctx = document.getElementById(canvasId);
+    if (!ctx) return;
+    ctx = ctx.getContext('2d');
+
+    var datasets = [];
+    var ci = 0;
+    for (var name in chartData) {
+        if (chartData.hasOwnProperty(name)) {
+            datasets.push({
+                label: name,
+                data: chartData[name].values,
+                borderColor: chartColors[(ci + colorOffset) % chartColors.length],
+                backgroundColor: 'transparent',
+                tension: 0.3,
+                pointRadius: 0,
+                borderWidth: 2,
+            });
+            ci++;
+        }
+    }
+
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: Object.values(chartData)[0] ? Object.values(chartData)[0].dates : [],
+            datasets: datasets,
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: {
+                    labels: { color: _v('--text2','#94a3b8'), usePointStyle: true, boxWidth: 8, padding: 14, font: { size: 12 } }
+                },
+                tooltip: { callbacks: { label: function(c) { return c.dataset.label + ': ¥' + c.parsed.y.toFixed(2); } } }
+            },
+            scales: {
+                x: { ticks: { color: _v('--text3','#64748b'), maxTicksLimit: 8 }, grid: { color: _v('--chart-grid','#1e293b') } },
+                y: { ticks: { color: _v('--text3','#64748b'), callback: function(v) { return '¥' + v.toFixed(0); } }, grid: { color: _v('--chart-grid','#1e293b') } }
+            }
+        }
+    });
+}
+
+// ── Init Charts ──
+var shortData = {{ chart_data_short | safe }};
+var longData = {{ chart_data_long | safe }};
+createGroupChart('chartShort', shortData, 0);
+createGroupChart('chartLong', longData, 3);
+
+// ── Reason tooltips ──
+document.querySelectorAll('.badge-rej').forEach(function(el) {
+    if (el.title) {
+        el.style.cursor = 'help';
+    }
+});
+</script>
+{% endblock %}

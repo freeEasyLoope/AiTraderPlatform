@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="section-header">
+    <div>
+        <a href="javascript:history.back()" class="text-muted" style="font-size:13px">&larr; 返回</a>
+        <h1 style="font-size:22px;margin-top:6px">
+            {{ name }}
+            <span class="text-muted" style="font-size:15px;font-weight:400">{{ symbol }}</span>
+        </h1>
+    </div>
+</div>
+
+{% if price %}
+<div class="stats">
+    <div class="stat">
+        <div class="value {{ 'green' if price.change_pct >= 0 else 'red' }}">¥{{ "%.2f"|format(price.close) }}</div>
+        <div class="label">最新价</div>
+        <div class="hint {{ 'green' if price.change_pct >= 0 else 'red' }}">
+            {{ '↑' if price.change_pct >= 0 else '↓' }}{{ "%+.2f"|format(price.change_pct * 100) }}%
+        </div>
+    </div>
+    <div class="stat">
+        <div class="value">¥{{ "%.2f"|format(price.high) }}</div>
+        <div class="label">今日最高</div>
+    </div>
+    <div class="stat">
+        <div class="value">¥{{ "%.2f"|format(price.low) }}</div>
+        <div class="label">今日最低</div>
+    </div>
+    <div class="stat">
+        <div class="value">{{ "%.1f"|format(pe) if pe else '-' }}</div>
+        <div class="label">市盈率 (PE)</div>
+        <div class="hint">
+            {% if pe %}
+            {{ '偏低' if pe < 15 else '偏高' if pe > 30 else '适中' }}
+            {% if pe_percentile is not none %}
+            · 历史 {{ pe_percentile }}% 分位
+            {% endif %}
+            {% endif %}
+        </div>
+    </div>
+    <div class="stat">
+        <div class="value">{{ "%.2f"|format(pb) if pb else '-' }}</div>
+        <div class="label">市净率 (PB)</div>
+        <div class="hint">{{ '低估' if pb and pb < 1 else '合理' if pb and pb < 3 else '偏高' if pb else '' }}</div>
+    </div>
+</div>
+
+<!-- PE 估值温度计 -->
+{% if pe and pe_percentile is not none %}
+<div class="card" style="margin-bottom:20px">
+    <h2>🌡 估值温度计</h2>
+    <div class="thermo">
+        <div class="thermo-label">
+            <span>当前 PE {{ "%.1f"|format(pe) }}</span>
+            <span>比历史 {{ pe_percentile }}% 时间贵</span>
+        </div>
+        <div class="thermo-track">
+            <div class="thermo-needle" style="left:{{ pe_percentile }}%"></div>
+        </div>
+        <div class="thermo-zone-labels">
+            <span style="color:var(--green)">低估 (<30%)</span>
+            <span style="color:var(--yellow)">合理 (30-70%)</span>
+            <span style="color:var(--red)">高估 (>70%)</span>
+        </div>
+    </div>
+    <p class="text-muted mt-8">
+        {% if pe_percentile < 30 %}
+        <span class="green">✓ 当前估值处于历史低位，可能是较好的入场时机。</span>
+        {% elif pe_percentile > 70 %}
+        <span class="red">⚠ 当前估值处于历史高位，追高风险较大。</span>
+        {% else %}
+        当前估值处于历史中位区间，价格相对合理。
+        {% endif %}
+        注意：历史分位数基于近 2 年价格数据近似计算，仅供参考。
+    </p>
+</div>
+{% endif %}
+
+{% else %}
+<div class="tip-card"><strong>无法获取实时行情</strong> — 可能非交易日或网络问题。</div>
+{% endif %}
+
+<div class="card">
+    <h2>近30天走势</h2>
+    {% if chart_data %}
+    <div class="chart-wrap"><canvas id="stockChart" aria-label="股价走势" role="img"></canvas></div>
+    {% else %}
+    <p class="text-muted" style="text-align:center;padding:40px">暂无历史数据</p>
+    {% endif %}
+</div>
+
+<div class="card" id="newsCard">
+    <div class="card-header">
+        <h2>📰 近期新闻 & 公告</h2>
+        <button class="btn-xs btn-ghost" onclick="loadNews('{{ symbol }}')">刷新</button>
+    </div>
+    <div id="newsContent">
+        <p class="text-muted" style="text-align:center;padding:20px">点击"刷新"获取新闻</p>
+    </div>
+</div>
+
+<div class="grid-2">
+    <div class="card">
+        <h2>持有该股的操盘手</h2>
+        {% if holders %}
+        <table>
+            <thead><tr><th>操盘手</th><th>持有</th><th>成本</th><th>买入理由</th></tr></thead>
+            <tbody>
+            {% for h in holders %}
+            <tr>
+                <td><a href="/trader/{{ h.trader_id }}" class="link">{{ h.trader_name }}</a></td>
+                <td>{{ h.shares }}股</td>
+                <td>¥{{ "%.2f"|format(h.avg_cost) }}</td>
+                <td style="font-size:12px;color:var(--text2);max-width:250px">{{ h.reason or '未知' }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted" style="text-align:center;padding:20px">暂无操盘手持仓该股</p>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <h2>投资小贴士</h2>
+        <div style="font-size:13px;color:var(--text2);line-height:1.8">
+            <p>• <strong>PE (市盈率)</strong> = 股价 ÷ 每股收益。越低越"便宜"，但要结合行业看。</p>
+            <p>• <strong>PB (市净率)</strong> = 股价 ÷ 每股净资产。&lt;1 = 股价比公司净资产还低。</p>
+            <p>• <strong>银行股</strong> PB 通常 &lt;1，<strong>科技股</strong> PE 通常偏高——不能用同一把尺子量。</p>
+            <p>• <strong>估值分位数</strong>：当前 PE 在历史中的位置比 PE 绝对值更重要。</p>
+            <p style="margin-top:8px;color:var(--yellow)">⚠ 单个指标不能决定买卖，需要综合分析。</p>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+{% if chart_data %}
+<script>
+var _v = function(n, fb) {
+    var v = getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+    return v || fb;
+};
+var cd = {{ chart_data | safe }};
+new Chart(document.getElementById('stockChart').getContext('2d'), {
+    type: 'line',
+    data: {
+        labels: cd.dates,
+        datasets: [{
+            data: cd.prices,
+            borderColor: _v('--accent', '#38bdf8'),
+            backgroundColor: function(ctx) {
+                var g = ctx.chart.ctx.createLinearGradient(0, 0, 0, 280);
+                g.addColorStop(0, 'rgba(56,189,248,.25)');
+                g.addColorStop(1, 'rgba(56,189,248,0)');
+                return g;
+            },
+            fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2,
+        }]
+    },
+    options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: function(c) { return '¥' + c.parsed.y.toFixed(2); } } }
+        },
+        scales: {
+            x: { ticks: { color: _v('--text3','#64748b'), maxTicksLimit: 10 }, grid: { color: _v('--border','#1e2d45') } },
+            y: { ticks: { color: _v('--text3','#64748b'), callback: function(v) { return '¥' + v; } }, grid: { color: _v('--border','#1e2d45') } }
+        }
+    }
+});
+
+// News loader
+async function loadNews(symbol) {
+    var el = document.getElementById('newsContent');
+    el.innerHTML = '<p class="text-muted" style="text-align:center;padding:20px">⏳ 获取中...</p>';
+    try {
+        var resp = await fetch('/api/news/' + symbol + '?days=7');
+        var d = await resp.json();
+        if (!d.news || d.news.length === 0) {
+            el.innerHTML = '<p class="text-muted" style="text-align:center;padding:20px">近7日无相关新闻/公告</p>';
+            return;
+        }
+        var html = '';
+        for (var i = 0; i < d.news.length; i++) {
+            var n = d.news[i];
+            var typeBadge = n.type === '分红' ? 'badge-buy' :
+                           n.type === '业绩预告' ? 'badge-purple' :
+                           n.type === '公告' ? 'badge-fill' : 'badge-buy';
+            html += '<div style="padding:8px 0;border-bottom:1px solid var(--chart-grid)">' +
+                '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
+                    '<span style="font-size:13px;color:var(--text);flex:1">' +
+                        (n.url ? '<a href="' + n.url + '" target="_blank" style="color:var(--text)">' + n.title + '</a>' : n.title) +
+                    '</span>' +
+                    '<span class="badge ' + typeBadge + '" style="font-size:10px">' + n.type + '</span>' +
+                '</div>' +
+                '<div style="font-size:11px;color:var(--text3);margin-top:2px">' + n.source + ' · ' + n.date + '</div>' +
+                (n.correlation && n.correlation !== '无显著关联' ?
+                 '<div style="font-size:11px;color:var(--yellow);margin-top:2px">🔗 ' + n.correlation + '</div>' : '') +
+            '</div>';
+        }
+        el.innerHTML = html;
+    } catch (e) {
+        el.innerHTML = '<p class="text-muted" style="text-align:center;padding:20px">获取失败: ' + e.message + '</p>';
+    }
+}
+
+// Auto-load news
+loadNews('{{ symbol }}');
+</script>
+{% endif %}
+{% endblock %}

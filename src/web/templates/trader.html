@@ -1,0 +1,233 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="section-header">
+    <div>
+        <a href="/" style="color:var(--text3);text-decoration:none;font-size:13px">&larr; 返回总览</a>
+        <h1 style="margin-top:6px">
+            #{{ trader.id }} {{ trader.name }}
+            <span style="font-size:14px;color:var(--text3);font-weight:400">{{ trader.strategy }}</span>
+            <span class="badge {{ 'badge-buy' if trader.group == 'short' else 'badge-purple' }}" style="margin-left:8px">
+                {{ '短线' if trader.group == 'short' else '长线' }}
+            </span>
+        </h1>
+    </div>
+    <div class="btn-group">
+        <button class="help-toggle" onclick="document.getElementById('helpBox').classList.toggle('show')">? 指标解释</button>
+        <a href="/control" class="btn btn-ghost btn-sm">调整参数</a>
+    </div>
+</div>
+
+<div class="help-box" id="helpBox">
+    <p><strong>📖 操盘手详情页怎么看？</strong></p>
+    <p>• <strong>总资产</strong> = 现金 + 持仓市值。操盘手的"身价"，越高越好。</p>
+    <p>• <strong>收益率</strong> = (总资产 - 初始资金) / 初始资金。红色亏损、绿色盈利。</p>
+    <p>• <strong>仓位</strong>：持仓市值占总资产比例。>80% 接近满仓，<20% 在等机会。</p>
+    <p>• <strong>集中度警告</strong>：单只股票超过总资产 30% 即为过度集中，暴雷风险大。</p>
+    <p style="margin-top:8px">💡 <strong>持仓明细</strong>：成本价 vs 当前价。绿色=浮盈，红色=浮亏。锁定=今日刚买(T+1)。</p>
+</div>
+
+<!-- Stats -->
+<div class="stats">
+    <div class="stat">
+        <div class="value cyan">¥{{ "%.2f"|format(trader.total_value) }}</div>
+        <div class="label">总资产</div>
+        <div class="hint">初始 ¥{{ "%.0f"|format(trader.initial_capital) }}</div>
+    </div>
+    <div class="stat">
+        <div class="value {{ 'green' if trader.return_pct >= 0 else 'red' }}">{{ "%+.2f"|format(trader.return_pct) }}%</div>
+        <div class="label">累计收益率</div>
+    </div>
+    <div class="stat">
+        <div class="value">¥{{ "%.2f"|format(trader.cash) }}</div>
+        <div class="label">可用现金</div>
+        <div class="hint">占比 {{ "%.0f"|format(trader.cash / trader.total_value * 100) if trader.total_value > 0 else 100 }}%</div>
+    </div>
+    <div class="stat">
+        {% set mv = trader.total_value - trader.cash %}
+        <div class="value">¥{{ "%.2f"|format(mv) }}</div>
+        <div class="label">持仓市值</div>
+        <div class="hint">仓位 {{ "%.0f"|format(mv / trader.total_value * 100) if trader.total_value > 0 else 0 }}%</div>
+    </div>
+    <div class="stat">
+        <div class="value">{{ positions|length }}</div>
+        <div class="label">持仓数量</div>
+        <div class="hint">只</div>
+    </div>
+</div>
+
+<!-- Warnings -->
+{% set pos_pct = (trader.total_value - trader.cash) / trader.total_value * 100 if trader.total_value > 0 else 0 %}
+{% if pos_pct > 80 %}
+<div class="tip-card"><strong>⚠ 高仓位：</strong>持仓占比 {{ "%.0f"|format(pos_pct) }}%，接近满仓。市场下跌将缺乏补仓资金。</div>
+{% elif pos_pct < 20 and trader.return_pct < 0.5 and trader.return_pct > -0.5 %}
+<div class="tip-card info"><strong>💡 空仓观望：</strong>策略尚未找到符合条件的买入机会。耐心等待比盲目操作更重要。</div>
+{% endif %}
+
+{% if pos_weights %}
+{% set max_w = pos_weights[0] if pos_weights else None %}
+{% if max_w and max_w.weight > 30 %}
+<div class="tip-card"><strong>⚠ 集中度风险：</strong>{{ max_w.name }} 占组合 {{ max_w.weight }}%，超过 30% 警戒线。单一股票暴雷将严重影响净值。</div>
+{% endif %}
+{% endif %}
+
+<!-- Chart -->
+<div class="card">
+    <h2>净值走势（最近 30 天）</h2>
+    <p class="text-muted mb-8">蓝色填充 = 累计盈亏。上升=赚钱，下降=亏钱，平线=空仓。</p>
+    <div class="chart-wrap"><canvas id="traderChart" aria-label="操盘手净值走势" role="img"></canvas></div>
+</div>
+
+<!-- Positions + Params -->
+<div class="grid-2">
+    <div class="card">
+        <h2>当前持仓</h2>
+        {% if positions %}
+        <div class="table-wrap"><table>
+            <thead><tr><th>代码</th><th>名称</th><th>持有</th><th>成本价</th><th>现价</th><th>盈亏</th><th>锁定</th></tr></thead>
+            <tbody>
+            {% for p in positions %}
+            <tr>
+                <td><span onclick="openStock('{{ p.symbol }}')" class="stock-link link">{{ p.symbol }}</span></td>
+                <td>{{ p.name }}</td>
+                <td>{{ p.shares }}股</td>
+                <td>¥{{ "%.2f"|format(p.avg_cost) }}</td>
+                <td>{% if p.current_price > 0 %}¥{{ "%.2f"|format(p.current_price) }}{% else %}-{% endif %}</td>
+                <td class="{{ 'green' if p.pnl > 0 else 'red' if p.pnl < 0 else '' }}">
+                    {% if p.current_price > 0 %}{{ "%+.1f"|format(p.pnl_pct) }}%{% else %}-{% endif %}
+                </td>
+                <td>{% if p.locked > 0 %}<span class="badge badge-rej">{{ p.locked }}锁定</span>{% else %}-{% endif %}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table></div>
+        {% else %}
+        <p style="color:var(--text3);padding:20px;text-align:center">暂无持仓，等待策略信号</p>
+        {% endif %}
+
+        {% if pos_weights and pos_weights|length > 1 %}
+        <div class="mt-16">
+            <h3 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">仓位分布</h3>
+            {% for pw in pos_weights[:5] %}
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                <span style="font-size:12px;color:var(--text2);min-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+                      title="{{ pw.name }}">{{ pw.name }}</span>
+                <div class="progress-bar" style="flex:1">
+                    <div class="progress-fill {{ 'red' if pw.weight > 30 else 'cyan' }}"
+                         style="width:{{ [pw.weight, 100]|min }}%"></div>
+                </div>
+                <span style="font-size:11px;color:var(--text3);min-width:40px;text-align:right">{{ pw.weight }}%</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <h2>策略参数</h2>
+        <p class="text-muted mb-8">这些参数决定买卖时机。在<a href="/control" style="color:var(--accent)">控制台</a>可修改。</p>
+        {% if trader.params %}
+        {% for k, v in trader.params.items() %}
+        <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--chart-grid)">
+            <span style="color:var(--text2);font-size:13px" class="pname" data-key="{{ k }}">{{ k }}</span>
+            <span style="font-weight:600;font-size:13px">{{ v }}</span>
+        </div>
+        {% endfor %}
+        {% else %}
+        <p style="color:var(--text3)">无可调参数</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Trade History -->
+<div class="card">
+    <h2>交易历史</h2>
+    <div class="table-wrap"><table>
+        <thead><tr><th>日期</th><th>股票</th><th>方向</th><th>数量</th><th>成交价</th><th>结果</th><th>交易理由</th></tr></thead>
+        <tbody>
+        {% for o in orders %}
+        <tr>
+            <td style="color:var(--text3);font-size:12px">{{ o.date }}</td>
+            <td><span onclick="openStock('{{ o.symbol }}')" class="stock-link link">{{ o.symbol_name }}</span></td>
+            <td><span class="badge {{ 'badge-buy' if o.type == 'buy' else 'badge-sell' }}">{{ '买入' if o.type == 'buy' else '卖出' }}</span></td>
+            <td>{{ o.shares }}股</td>
+            <td>¥{{ "%.2f"|format(o.price) }}</td>
+            <td>
+                {% if o.status == 'filled' %}
+                <span class="badge badge-fill">成交</span>
+                {% else %}
+                <span class="badge badge-rej" title="拒绝原因: {{ o.reject or '未知' }}">拒绝</span>
+                {% endif %}
+            </td>
+            <td style="font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                <span style="color:{{ 'var(--yellow)' if o.reject else 'var(--text2)' }}">{{ o.reject or o.reason or '-' }}</span>
+            </td>
+        </tr>
+        {% endfor %}
+        {% if not orders %}
+        <tr><td colspan="7" style="text-align:center;color:var(--text3);padding:20px">暂无交易记录</td></tr>
+        {% endif %}
+        </tbody>
+    </table></div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+var PARAM_NAMES = {
+    max_positions:'最大持仓数', pe_threshold:'PE阈值', pb_max:'PB上限',
+    take_profit:'止盈线', stop_loss:'止损线', ma_short:'短期均线', ma_long:'长期均线',
+    volume_ratio:'放量倍率', rsi_oversold:'RSI超卖线', rsi_overbought:'RSI超买线',
+    bollinger_touch:'布林触发', max_hold_days:'最长持有天数',
+    min_dividend_yield:'最低股息率', sell_dividend_yield:'卖出股息率',
+    max_pb:'市净率上限', weekly_amount:'每周定投金额', etf_symbol:'定投标的',
+    universe:'选股范围', stock_weight:'股票比例', bond_weight:'债券比例',
+    gold_weight:'黄金比例', rebalance_threshold:'再平衡阈值', shibor_shift:'利率阈值',
+};
+document.querySelectorAll('.pname').forEach(function(el) {
+    var k = el.dataset.key;
+    if (PARAM_NAMES[k]) el.textContent = PARAM_NAMES[k];
+});
+
+// Chart
+var _v = function(n, fb) {
+    var v = getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+    return v || fb;
+};
+var chartData = {{ chart_data | safe }};
+var ctx = document.getElementById('traderChart').getContext('2d');
+var gradient = ctx.createLinearGradient(0, 0, 0, 300);
+gradient.addColorStop(0, 'rgba(56,189,248,0.25)');
+gradient.addColorStop(1, 'rgba(56,189,248,0.0)');
+
+new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: chartData.dates,
+        datasets: [{
+            label: '{{ trader.name }}',
+            data: chartData.values,
+            borderColor: '#38bdf8',
+            backgroundColor: gradient,
+            fill: true,
+            tension: 0.3,
+            pointRadius: 0,
+            borderWidth: 2,
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: function(c) { return '总资产: ¥' + c.parsed.y.toFixed(2); } } }
+        },
+        scales: {
+            x: { ticks: { color: _v('--text3','#64748b'), maxTicksLimit: 10 }, grid: { color: _v('--chart-grid','#1e293b') } },
+            y: { ticks: { color: _v('--text3','#64748b'), callback: function(v) { return '¥' + v.toFixed(0); } }, grid: { color: _v('--chart-grid','#1e293b') } }
+        }
+    }
+});
+</script>
+{% endblock %}

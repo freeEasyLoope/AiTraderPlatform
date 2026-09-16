@@ -1,0 +1,45 @@
+# ============================================================
+# A股模拟投资系统 — 全局配置
+# ============================================================
+
+simulation:
+  # 每个操盘手独立 ¥10,000 资金池
+  # 短线组 3人 × ¥10,000 = ¥30,000
+  # 长线组 3人 × ¥10,000 = ¥30,000
+  capital_per_trader: 10000.0    # 每人初始资金
+  short_capital: 30000.0         # 短线组总资金
+  long_capital: 30000.0          # 长线组总资金
+
+market:
+  # A股交易规则
+  t_plus_1: true                 # T+1 制度
+  price_limit_main: 0.10         # 主板涨跌停 ±10%
+  price_limit_gem: 0.20          # 科创/创业板涨跌停 ±20%
+  min_shares_stock: 100          # 股票最小交易单位 (1手)
+  min_shares_fund: 100           # 基金最小交易单位
+  stamp_tax: 0.001               # 印花税 0.1% (仅卖出)
+  commission: 0.0003             # 佣金 0.03% (买卖双向)
+
+scheduler:
+  trading_time: "21:00"          # 每日交易执行时间
+  weekly_report_time: "21:30"    # 周报生成时间
+  weekly_report_day: "fri"       # 周报日 (mon/tue/wed/thu/fri)
+  # 是否在 web 进程内跑定时任务。
+  # 托管平台（注入 POCKETBAY_DATA_DIR）自动置 true——平台没有 cron；
+  # 本地保持 false，避免与 run_daily.bat / cli.py schedule 重复下单。
+  run_in_web: false
+
+llm:
+  model: "claude-sonnet-4-6"     # 周报生成模型
+  max_tokens: 4096
+  temperature: 0.3               # 分析需要稳定性
+
+database:
+  # 相对路径会挂到可写数据目录下：
+  #   本地 = 仓库根     托管平台 = POCKETBAY_DATA_DIR（如 /data，跨版本保留）
+  # 若平台注入了 DATABASE_URL（托管 PostgreSQL），则以 DATABASE_URL 为准。
+  path: "data/simulation.db"
+
+logging:
+  level: "INFO"
+  file: "logs/simulation.log"

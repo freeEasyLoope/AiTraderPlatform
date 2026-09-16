@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% block content %}
+
+<style>
+    .screening-controls {
+        display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;
+        margin-bottom: 20px; padding: 16px;
+        background: var(--card); border-radius: 8px;
+        border: 1px solid rgba(30,45,69,.3);
+    }
+    .screening-controls label { font-size: 12px; color: var(--text3); display: block; margin-bottom: 4px; }
+    .screening-controls select, .screening-controls input {
+        background: var(--bg); color: var(--text1); border: 1px solid rgba(30,45,69,.5);
+        border-radius: 4px; padding: 6px 10px; font-size: 13px; min-width: 120px;
+    }
+    .btn-run {
+        background: var(--accent); color: #fff; border: none;
+        border-radius: 4px; padding: 8px 20px; font-size: 13px; cursor: pointer;
+    }
+    .btn-run:hover { opacity: 0.9; }
+    .btn-run:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .result-summary {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 10px; margin-bottom: 20px;
+    }
+    .stat-card {
+        padding: 14px; background: var(--card); border-radius: 6px;
+        border: 1px solid rgba(30,45,69,.3); text-align: center;
+    }
+    .stat-card .val { font-size: 22px; font-weight: 700; color: var(--accent); }
+    .stat-card .lbl { font-size: 11px; color: var(--text3); margin-top: 4px; }
+
+    .passed-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .passed-table th {
+        text-align: left; padding: 10px 8px; color: var(--text3);
+        font-weight: 500; font-size: 11px; border-bottom: 1px solid rgba(30,45,69,.5);
+    }
+    .passed-table td {
+        padding: 8px; border-bottom: 1px solid rgba(30,45,69,.15);
+    }
+    .passed-table tr:hover { background: rgba(30,45,69,.1); }
+    .score-bar {
+        display: inline-block; height: 6px; border-radius: 3px;
+        vertical-align: middle; margin-right: 6px;
+    }
+    .tag { display: inline-block; padding: 2px 6px; border-radius: 3px;
+           font-size: 10px; margin-right: 4px; }
+    .tag-pass { background: rgba(34,197,94,.15); color: #22c55e; }
+    .tag-fail { background: rgba(239,68,68,.15); color: #ef4444; }
+
+    .loading-indicator { text-align: center; padding: 40px; color: var(--text3); }
+    .loading-indicator .spinner {
+        display: inline-block; width: 30px; height: 30px; border: 3px solid var(--text3);
+        border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #errorBox { display: none; padding: 12px; background: rgba(239,68,68,.1);
+                border: 1px solid rgba(239,68,68,.3); border-radius: 6px;
+                color: #ef4444; margin-bottom: 16px; font-size: 13px; }
+</style>
+
+<h2>选股漏斗 <span class="page-subtitle">5步筛选 → 安全可做清单</span></h2>
+
+<div class="screening-controls">
+    <div>
+        <label>标的池</label>
+        <select id="universeSelect">
+            <option value="all">全市场 (all)</option>
+            <option value="hs300">沪深300 (hs300)</option>
+            <option value="zz500">中证500 (zz500)</option>
+        </select>
+    </div>
+    <div>
+        <label>活跃步骤</label>
+        <input id="stepsInput" value="1,3,5" style="width:100px">
+    </div>
+    <div>
+        <button class="btn-run" id="runBtn" onclick="runScreening()">▶ 运行漏斗</button>
+    </div>
+    <div style="flex:1"></div>
+    <div style="font-size:11px;color:var(--text3);line-height:1.6">
+        ①量价+PE &nbsp; ②财务排雷 &nbsp; ③资金验证 &nbsp; ④赛道择优 &nbsp; ⑤风险过滤
+    </div>
+</div>
+
+<div id="errorBox"></div>
+<div id="loadingBox" class="loading-indicator" style="display:none">
+    <div class="spinner"></div>
+    <div style="margin-top:12px">筛选中... 可能需要 10-30 秒</div>
+</div>
+
+<div id="resultArea" style="display:none">
+    <div class="result-summary" id="summary"></div>
+    <table class="passed-table" id="passedTable">
+        <thead>
+            <tr>
+                <th>代码</th><th>名称</th><th>行业</th><th>总评分</th><th>步骤详情</th>
+            </tr>
+        </thead>
+        <tbody id="passedBody"></tbody>
+    </table>
+</div>
+
+<script>
+async function runScreening() {
+    var btn = document.getElementById('runBtn');
+    btn.disabled = true; btn.textContent = '运行中...';
+    document.getElementById('errorBox').style.display = 'none';
+    document.getElementById('resultArea').style.display = 'none';
+    document.getElementById('loadingBox').style.display = 'block';
+
+    var universe = document.getElementById('universeSelect').value;
+    var steps = document.getElementById('stepsInput').value;
+
+    try {
+        var resp = await fetch('/screening/api/run?universe=' + universe + '&steps=' + steps);
+        var data = await resp.json();
+        document.getElementById('loadingBox').style.display = 'none';
+
+        if (!data.ok) {
+            showError('请求失败');
+            return;
+        }
+
+        if (data.errors && data.errors.length > 0) {
+            var errDiv = document.getElementById('errorBox');
+            errDiv.style.display = 'block';
+            errDiv.textContent = '警告: ' + data.errors.join('; ');
+        }
+
+        // Summary
+        var summary = document.getElementById('summary');
+        var steps = data.step_stats || {};
+        var stepHtml = '<div class="stat-card"><div class="val">' + data.input_count + '</div><div class="lbl">输入</div></div>';
+        for (var s in steps) {
+            var st = steps[s];
+            var label = {1:'量价+PE', 2:'财务排雷', 3:'资金验证', 4:'赛道', 5:'风险'}[s] || '步骤'+s;
+            stepHtml += '<div class="stat-card"><div class="val">' + st.after + '</div><div class="lbl">' + label + ' (-' + st.dropped + ')</div></div>';
+        }
+        stepHtml += '<div class="stat-card"><div class="val" style="color:#22c55e">' + data.output_count + '</div><div class="lbl">最终通过</div></div>';
+        stepHtml += '<div class="stat-card"><div class="val">' + data.duration_ms + 'ms</div><div class="lbl">耗时</div></div>';
+        summary.innerHTML = stepHtml;
+
+        // Table
+        var tbody = document.getElementById('passedBody');
+        tbody.innerHTML = '';
+        (data.passed || []).forEach(function(a) {
+            var row = document.createElement('tr');
+
+            var stepsHtml = a.steps.map(function(s) {
+                var cls = s.passed ? 'tag-pass' : 'tag-fail';
+                return '<span class="tag ' + cls + '">S' + s.step + (s.passed ? '✓' : '✗') + '</span>';
+            }).join('');
+
+            var scoreColor = a.total_score >= 0.8 ? '#22c55e' : a.total_score >= 0.5 ? '#eab308' : '#6b7280';
+            var barWidth = Math.round(a.total_score * 100);
+
+            row.innerHTML =
+                '<td style="color:var(--accent)">' + a.symbol + '</td>' +
+                '<td>' + (a.name || '-') + '</td>' +
+                '<td style="color:var(--text3)">' + (a.industry || '-') + '</td>' +
+                '<td><span class="score-bar" style="width:' + barWidth + 'px;background:' + scoreColor + '"></span>' +
+                '<span style="color:' + scoreColor + ';font-weight:600">' + a.total_score.toFixed(2) + '</span></td>' +
+                '<td>' + stepsHtml + '</td>';
+            tbody.appendChild(row);
+        });
+
+        document.getElementById('resultArea').style.display = 'block';
+    } catch(e) {
+        document.getElementById('loadingBox').style.display = 'none';
+        showError('请求异常: ' + e.message);
+    }
+
+    btn.disabled = false; btn.textContent = '▶ 运行漏斗';
+}
+
+function showError(msg) {
+    var el = document.getElementById('errorBox');
+    el.style.display = 'block';
+    el.textContent = msg;
+}
+</script>
+{% endblock %}

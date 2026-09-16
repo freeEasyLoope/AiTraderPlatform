@@ -1,0 +1,519 @@
+{% extends "base.html" %}
+{% block content %}
+
+<!-- ═══════════════════════════════════════════════════════════════
+     策略实验室 — 回测 + 策略画像 + 参数调优
+     ═══════════════════════════════════════════════════════════════ -->
+
+<div class="section-header">
+    <div>
+        <h1>◈ 策略实验室</h1>
+        <p class="page-subtitle">理解策略性格 · 回测历史表现 · 优化参数配置</p>
+    </div>
+    <button class="help-toggle" onclick="document.getElementById('helpBox').classList.toggle('show')">? 使用指南</button>
+</div>
+
+<div class="help-box" id="helpBox">
+    <p><strong>🧪 策略实验室能做什么？</strong></p>
+    <p>• <strong>策略画像</strong>：了解每个策略的性格——适合什么人、什么行情下表现好。</p>
+    <p>• <strong>历史回测</strong>：选择日期范围和策略，让它在历史数据上"重跑"一次。</p>
+    <p>• <strong>参数扫描</strong>：改变一个参数（如止损线从 -8% 改 -5%），看收益和回撤怎么变。</p>
+    <p>• <strong>双组对比</strong>：短线组和长线组在当前市场环境下的表现差异。</p>
+    <p style="margin-top:8px;color:var(--yellow)">⚠ 回测结果仅供参考，过去表现不代表未来收益。</p>
+</div>
+
+<!-- ── TAB NAV ── -->
+<div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('profiles')" id="tab-profiles">🎯 策略画像</button>
+    <button class="tab-btn" onclick="switchTab('backtest')" id="tab-backtest">📈 历史回测</button>
+    <button class="tab-btn" onclick="switchTab('compare')" id="tab-compare">⚔ 双组对比</button>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     TAB 1: 策略画像
+     ═══════════════════════════════════════════════ -->
+<div class="tab-content" id="content-profiles">
+    <p class="text-muted mb-16">点击策略卡片查看详情和匹配度。每个策略有独特的性格——找到适合你的那个。</p>
+
+    <div style="margin-bottom:24px">
+        <h3 style="font-size:13px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">⚡ 短线组 — 技术面驱动，交易频率高</h3>
+        <div class="grid-3">
+            {% for t in short_traders %}
+            <div class="strategy-card" onclick="showStrategyDetail('{{ t.name }}', '{{ t.strategy }}', {{ t.return_pct }}, {{ t.volatility }}, {{ t.trade_count }}, '{{ t.group }}', {{ t.total_value }}, {{ t.capital }})">
+                <div class="sc-header">
+                    <div class="sc-icon" style="background:rgba(56,189,248,.1);color:var(--accent)">
+                        {% if '趋势' in t.name %}↗{% elif '回归' in t.name %}↺{% else %}◈{% endif %}
+                    </div>
+                    <div>
+                        <div class="sc-name">{{ t.name }}</div>
+                        <div class="sc-group">短线组 · {{ t.trade_count }} 笔交易</div>
+                    </div>
+                </div>
+                <div class="sc-return {{ 'green' if t.return_pct >= 0 else 'red' }}">
+                    {{ "%+.1f"|format(t.return_pct) }}%
+                </div>
+                <div class="sc-meta">
+                    <span>💰 ¥{{ "%.0f"|format(t.total_value) }}</span>
+                    <span>📊 波动 {{ "%.1f"|format(t.volatility) }}%</span>
+                </div>
+                <div class="progress-bar mt-8">
+                    <div class="progress-fill {{ 'green' if t.return_pct >= 0 else 'red' }}"
+                         style="width:{{ [t.return_pct|abs, 100]|min }}%"></div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div>
+        <h3 style="font-size:13px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">🏛 长线组 — 基本面驱动，低频持有</h3>
+        <div class="grid-3">
+            {% for t in long_traders %}
+            <div class="strategy-card" onclick="showStrategyDetail('{{ t.name }}', '{{ t.strategy }}', {{ t.return_pct }}, {{ t.volatility }}, {{ t.trade_count }}, '{{ t.group }}', {{ t.total_value }}, {{ t.capital }})">
+                <div class="sc-header">
+                    <div class="sc-icon" style="background:rgba(129,140,248,.1);color:var(--accent2)">
+                        {% if '价值' in t.name %}◆{% elif '红利' in t.name %}💎{% else %}📅{% endif %}
+                    </div>
+                    <div>
+                        <div class="sc-name">{{ t.name }}</div>
+                        <div class="sc-group">长线组 · {{ t.trade_count }} 笔交易</div>
+                    </div>
+                </div>
+                <div class="sc-return {{ 'green' if t.return_pct >= 0 else 'red' }}">
+                    {{ "%+.1f"|format(t.return_pct) }}%
+                </div>
+                <div class="sc-meta">
+                    <span>💰 ¥{{ "%.0f"|format(t.total_value) }}</span>
+                    <span>📊 波动 {{ "%.1f"|format(t.volatility) }}%</span>
+                </div>
+                <div class="progress-bar mt-8">
+                    <div class="progress-fill {{ 'green' if t.return_pct >= 0 else 'red' }}"
+                         style="width:{{ [t.return_pct|abs, 100]|min }}%"></div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     TAB 2: 历史回测
+     ═══════════════════════════════════════════════ -->
+<div class="tab-content" id="content-backtest" style="display:none">
+    <div class="grid-2">
+        <!-- 回测配置 -->
+        <div class="card">
+            <h2>回测配置</h2>
+            <div class="bt-param-group">
+                <h3>时间范围</h3>
+                <div class="bt-param-row">
+                    <label>起始日期</label>
+                    <input type="date" id="btStart" value="{{ (now|default('2026-01-01'))[:10] if now is defined else '2026-01-01' }}">
+                </div>
+                <div class="bt-param-row">
+                    <label>结束日期</label>
+                    <input type="date" id="btEnd" value="">
+                </div>
+            </div>
+            <div class="bt-param-group mt-12">
+                <h3>目标策略</h3>
+                <div class="bt-param-row">
+                    <label>操盘手</label>
+                    <select id="btTrader">
+                        <option value="">全部操盘手</option>
+                        {% for t in perf_data %}
+                        <option value="{{ t.name }}">{{ t.name }} ({{ '短线' if t.group == 'short' else '长线' }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="bt-param-group mt-12">
+                <h3>参数覆盖（可选）</h3>
+                <p class="text-muted mb-8">留空使用默认参数。修改后回测将使用新参数值。</p>
+                <div class="bt-param-row">
+                    <label>止损线</label>
+                    <input type="number" id="btStopLoss" placeholder="如 -0.08" step="0.01">
+                    <span class="text-muted">如 -0.08 = -8%</span>
+                </div>
+                <div class="bt-param-row">
+                    <label>止盈线</label>
+                    <input type="number" id="btTakeProfit" placeholder="如 0.30" step="0.01">
+                    <span class="text-muted">如 0.30 = +30%</span>
+                </div>
+                <div class="bt-param-row">
+                    <label>最大持仓</label>
+                    <input type="number" id="btMaxPos" placeholder="如 5" step="1">
+                    <span class="text-muted">只</span>
+                </div>
+            </div>
+            <button onclick="runBacktest()" style="margin-top:12px;width:100%" id="btRunBtn">▶ 开始回测</button>
+            <div id="btStatus" class="text-muted mt-8" style="text-align:center"></div>
+        </div>
+
+        <!-- 回测结果 -->
+        <div class="card" id="btResultCard">
+            <h2>回测结果</h2>
+            <div class="empty-state" id="btEmpty">
+                <div class="empty-icon">📈</div>
+                <p>配置回测参数后点击"开始回测"</p>
+                <p class="text-muted">提示：选择较短的日期范围（1-3 个月）可快速获得结果</p>
+            </div>
+            <div id="btResults" style="display:none">
+                <div class="bt-metric-row mb-16" id="btMetrics"></div>
+                <div class="chart-wrap"><canvas id="btChart"></canvas></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     TAB 3: 双组对比
+     ═══════════════════════════════════════════════ -->
+<div class="tab-content" id="content-compare" style="display:none">
+    <div class="grid-2">
+        <!-- 短线组 -->
+        <div class="card card-highlight">
+            <h2>⚡ 短线组 <span class="text-muted" style="font-weight:400;text-transform:none">· 技术面驱动</span></h2>
+            <div class="stats" style="grid-template-columns:1fr 1fr;margin-bottom:16px">
+                <div class="stat" style="background:var(--bg)">
+                    <div class="value cyan">¥{{ "%.0f"|format(short_total) }}</div>
+                    <div class="label">总资产</div>
+                    <div class="hint">初始 ¥{{ "%.0f"|format(short_capital) }}</div>
+                </div>
+                <div class="stat" style="background:var(--bg)">
+                    <div class="value {{ 'green' if short_return >= 0 else 'red' }}">{{ "%+.1f"|format(short_return) }}%</div>
+                    <div class="label">组收益率</div>
+                </div>
+            </div>
+            {% for t in short_traders %}
+            <div class="rank-strip" onclick="window.location='/trader/{{ t.id }}'">
+                <span class="rank-num">{{ loop.index }}</span>
+                <div class="rank-info">
+                    <div class="rank-name">{{ t.name }}</div>
+                    <div class="rank-strategy">{{ t.strategy }} · {{ t.trade_count }} 笔</div>
+                </div>
+                <div class="rank-return">
+                    <div class="val {{ 'green' if t.return_pct >= 0 else 'red' }}">{{ "%+.1f"|format(t.return_pct) }}%</div>
+                    <div class="lbl">收益</div>
+                </div>
+            </div>
+            {% endfor %}
+            <div class="tip-card info mt-12" style="margin-bottom:0">
+                <strong>短线特征：</strong>频繁交易，抓波段机会。牛市和震荡市表现好，熊市容易被反复止损。
+            </div>
+        </div>
+
+        <!-- 长线组 -->
+        <div class="card card-highlight">
+            <h2>🏛 长线组 <span class="text-muted" style="font-weight:400;text-transform:none">· 基本面驱动</span></h2>
+            <div class="stats" style="grid-template-columns:1fr 1fr;margin-bottom:16px">
+                <div class="stat" style="background:var(--bg)">
+                    <div class="value purple">¥{{ "%.0f"|format(long_total) }}</div>
+                    <div class="label">总资产</div>
+                    <div class="hint">初始 ¥{{ "%.0f"|format(long_capital) }}</div>
+                </div>
+                <div class="stat" style="background:var(--bg)">
+                    <div class="value {{ 'green' if long_return >= 0 else 'red' }}">{{ "%+.1f"|format(long_return) }}%</div>
+                    <div class="label">组收益率</div>
+                </div>
+            </div>
+            {% for t in long_traders %}
+            <div class="rank-strip" onclick="window.location='/trader/{{ t.id }}'">
+                <span class="rank-num">{{ loop.index }}</span>
+                <div class="rank-info">
+                    <div class="rank-name">{{ t.name }}</div>
+                    <div class="rank-strategy">{{ t.strategy }} · {{ t.trade_count }} 笔</div>
+                </div>
+                <div class="rank-return">
+                    <div class="val {{ 'green' if t.return_pct >= 0 else 'red' }}">{{ "%+.1f"|format(t.return_pct) }}%</div>
+                    <div class="lbl">收益</div>
+                </div>
+            </div>
+            {% endfor %}
+            <div class="tip-card info mt-12" style="margin-bottom:0">
+                <strong>长线特征：</strong>低频交易，靠时间赚钱。熊市抗跌能力强，但在狂热牛市中可能跑输指数。
+            </div>
+        </div>
+    </div>
+
+    <!-- 学习要点 -->
+    <div class="card mt-16">
+        <h2>🧠 对比中学到的事</h2>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px;font-size:13px;color:var(--text2);line-height:1.8">
+            <div>
+                <strong style="color:var(--accent)">市场环境决定策略表现</strong>
+                <p>牛市：趋势跟随 > 价值投资<br>熊市：红利股息 > 均值回归<br>震荡：均值回归 > 趋势跟随</p>
+            </div>
+            <div>
+                <strong style="color:var(--accent)">高频 ≠ 高收益</strong>
+                <p>手续费和滑点在模拟中已体现。频繁交易的优势需要足够高的胜率支撑。</p>
+            </div>
+            <div>
+                <strong style="color:var(--accent)">分散是唯一免费的午餐</strong>
+                <p>没有一种策略在所有行情下都赚钱。组合使用才是正解。</p>
+            </div>
+            <div>
+                <strong style="color:var(--accent)">耐心等待比频繁操作更重要</strong>
+                <p>看看指数定投者——从不卖出，靠时间积累。很多时候"不动"就是最好的策略。</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── 策略详情弹窗 ── -->
+<div class="modal-overlay" id="stratModal" onclick="if(event.target===this)closeStratModal()">
+    <div class="modal wide" style="position:relative">
+        <button class="close" onclick="closeStratModal()" aria-label="关闭">&times;</button>
+        <h2 id="stratTitle"></h2>
+        <div id="stratContent"></div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Tab Switching ──
+function switchTab(name) {
+    document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+    document.querySelectorAll('.tab-content').forEach(function(c) { c.style.display = 'none'; });
+    document.getElementById('tab-' + name).classList.add('active');
+    document.getElementById('content-' + name).style.display = 'block';
+}
+
+// ── Strategy Detail Modal ──
+function showStrategyDetail(name, strategy, ret, vol, trades, group, tv, capital) {
+    var m = document.getElementById('stratModal');
+    var title = document.getElementById('stratTitle');
+    var content = document.getElementById('stratContent');
+
+    var personaMap = {
+        '趋势跟随者': {
+            emoji: '🏄', persona: '冲浪型交易者',
+            desc: '喜欢顺势而为，能承受连续小亏，追求大波段利润。适合有时间盯盘的活跃投资者。',
+            strength: '单边趋势市中表现最佳，牛市收益突出',
+            weakness: '震荡市中反复止损，连续小亏考验心态',
+            advice: '设定明确的止损线并严格执行。趋势不明朗时空仓等待。',
+            market: '牛市/单边上涨 → 最佳 | 震荡市 → 差 | 熊市 → 止损频繁',
+            color: '#22c55e'
+        },
+        '均值回归者': {
+            emoji: '🎣', persona: '逆向钓鱼型',
+            desc: '在别人恐慌时入场，在别人贪婪时离场。适合有耐心、不追涨的逆向投资者。',
+            strength: '震荡市中反复收割，胜率高',
+            weakness: '单边暴跌中可能"抄在半山腰"，单边牛市中过早离场',
+            advice: '不要在暴跌第一天就抄底——等RSI确认超卖后再动手。',
+            market: '震荡市 → 最佳 | 单边牛市 → 会跑输 | 急跌反弹 → 强项',
+            color: '#a78bfa'
+        },
+        '宏观对冲者': {
+            emoji: '🌐', persona: '大类资产配置型',
+            desc: '不押单一资产，在股票/债券/黄金间轮动。适合追求稳健、关注宏观的投资者。',
+            strength: '大类资产轮动降低波动，熊市债券黄金对冲',
+            weakness: '资产间相关性变化时轮动逻辑失效，调仓频率可能偏高',
+            advice: '关注利率和通胀数据。极端行情下所有资产可能同跌。',
+            market: '温和市场 → 最佳 | 极端单边 → 会跑输 | 危机 → 黄金对冲有效',
+            color: '#fb923c'
+        },
+        '价值猎手': {
+            emoji: '🔍', persona: '捡烟蒂型',
+            desc: '寻找被市场低估的便宜货，等待价值回归。适合有耐心、相信"价格终将反映价值"的长期投资者。',
+            strength: '熊市底部能抓住真正的便宜货，长期收益稳定',
+            weakness: '牛市可能跑输，低估值陷阱（看似便宜但基本面恶化）',
+            advice: 'PE低只是起点——还要看ROE、负债率、行业前景。不是所有便宜货都值得买。',
+            market: '熊市末期 → 最佳建仓时机 | 牛市 → 可能跑输 | 价值回归慢 → 要耐心',
+            color: '#38bdf8'
+        },
+        '红利收集者': {
+            emoji: '💎', persona: '收租型',
+            desc: '买入高股息股票，靠分红赚钱。适合不喜欢频繁交易、追求稳定现金流的保守投资者。',
+            strength: '熊市抗跌，股息提供保底收益，波动低',
+            weakness: '牛市跑输成长股，高股息可能意味着低增长',
+            advice: '股息率超过5%要警惕——可能是股价暴跌导致的"被动高股息"。',
+            market: '震荡/熊市 → 抗跌 | 牛市 → 跑输 | 降息周期 → 利好',
+            color: '#fbbf24'
+        },
+        '指数定投者': {
+            emoji: '🐢', persona: '乌龟型',
+            desc: '不选股、不择时，每周固定金额买入指数。适合忙碌、不想研究个股的极简主义者。',
+            strength: '零决策成本，长期跑赢大多数主动投资者',
+            weakness: '不择时意味着高位也买，短期可能浮亏较大',
+            advice: '定投的精髓是"越跌越买"——下跌时同样的钱买更多份额。坚持3年以上效果显著。',
+            market: '任何市场 → 坚持即可 | 熊市 → 低位吸筹 | 牛市 → 避免踏空',
+            color: '#f472b6'
+        }
+    };
+
+    var p = personaMap[name] || {
+        emoji: '📊', persona: '量化交易型',
+        desc: '基于量化指标自动决策，纪律严明。',
+        strength: '不受情绪影响，严格执行策略',
+        weakness: '参数可能需要根据市场环境调整',
+        advice: '理解策略背后的逻辑比看净值更重要。',
+        market: '取决于策略类型',
+        color: '#94a3b8'
+    };
+
+    title.innerHTML = p.emoji + ' ' + name + ' <span class="badge badge-' + (group === 'short' ? 'buy' : 'purple') + '">' + (group === 'short' ? '短线组' : '长线组') + '</span>';
+
+    content.innerHTML =
+        '<div class="grid-2">' +
+            '<div>' +
+                '<div class="stats" style="grid-template-columns:1fr 1fr;margin-bottom:14px">' +
+                    '<div class="stat" style="background:var(--bg)"><div class="value ' + (ret >= 0 ? 'green' : 'red') + '">' + (ret >= 0 ? '+' : '') + ret.toFixed(1) + '%</div><div class="label">累计收益</div></div>' +
+                    '<div class="stat" style="background:var(--bg)"><div class="value">' + trades + '</div><div class="label">成交笔数</div></div>' +
+                    '<div class="stat" style="background:var(--bg)"><div class="value">¥' + tv.toFixed(0) + '</div><div class="label">当前资产</div></div>' +
+                    '<div class="stat" style="background:var(--bg)"><div class="value">' + vol.toFixed(1) + '%</div><div class="label">年化波动</div></div>' +
+                '</div>' +
+                '<div class="tip-card info" style="margin-bottom:0">' +
+                    '<strong>📖 投资哲学：</strong>' + p.desc + '<br><br>' +
+                    '<strong>✅ 优势：</strong>' + p.strength + '<br>' +
+                    '<strong>⚠️ 劣势：</strong>' + p.weakness + '<br><br>' +
+                    '<strong>💡 新手建议：</strong>' + p.advice +
+                '</div>' +
+            '</div>' +
+            '<div>' +
+                '<div class="card" style="margin-bottom:14px">' +
+                    '<h2>适合什么样的你</h2>' +
+                    '<div style="text-align:center;font-size:64px;margin:12px 0">' + p.emoji + '</div>' +
+                    '<div style="text-align:center;font-size:18px;font-weight:700;color:' + p.color + ';margin-bottom:8px">' + p.persona + '</div>' +
+                    '<p style="font-size:13px;color:var(--text2);text-align:center;line-height:1.7">' + p.desc + '</p>' +
+                '</div>' +
+                '<div class="card">' +
+                    '<h2>行情适应性</h2>' +
+                    '<div style="font-size:13px;color:var(--text2);line-height:2">' + p.market.split('|').map(function(s) { return '<div>' + s.trim() + '</div>'; }).join('') + '</div>' +
+                '</div>' +
+            '</div>' +
+        '</div>' +
+        '<div class="btn-row mt-16">' +
+            '<a href="/trader/' + (perfDataMap[name] || '') + '" style="color:var(--accent);font-size:13px">查看详细持仓 →</a>' +
+            '<a href="/control" style="color:var(--accent2);font-size:13px;margin-left:16px">调整策略参数 →</a>' +
+        '</div>';
+
+    m.classList.add('show');
+}
+
+function closeStratModal() {
+    document.getElementById('stratModal').classList.remove('show');
+}
+
+// perfDataMap for linking
+var perfDataMap = {};
+{% for t in perf_data %}
+perfDataMap['{{ t.name }}'] = {{ t.id }};
+{% endfor %}
+
+// ── Backtest ──
+var btChartInst = null;
+
+async function runBacktest() {
+    var startDate = document.getElementById('btStart').value;
+    var endDate = document.getElementById('btEnd').value;
+    var trader = document.getElementById('btTrader').value;
+    var btn = document.getElementById('btRunBtn');
+    var statusEl = document.getElementById('btStatus');
+
+    if (!startDate || !endDate) {
+        statusEl.innerHTML = '<span class="red">请选择起止日期</span>';
+        return;
+    }
+
+    var params = {};
+    var stopLoss = document.getElementById('btStopLoss').value;
+    var takeProfit = document.getElementById('btTakeProfit').value;
+    var maxPos = document.getElementById('btMaxPos').value;
+    if (stopLoss) params['stop_loss'] = parseFloat(stopLoss);
+    if (takeProfit) params['take_profit'] = parseFloat(takeProfit);
+    if (maxPos) params['max_positions'] = parseInt(maxPos);
+
+    setLoading(btn, true, '回测中...');
+    statusEl.innerHTML = '⏳ 正在跑 ' + startDate + ' ~ ' + endDate + '...';
+
+    try {
+        var resp = await fetch('/api/strategies/backtest', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                start_date: startDate,
+                end_date: endDate,
+                trader: trader,
+                params: params
+            })
+        });
+        var r = await resp.json();
+        setLoading(btn, false);
+
+        if (!r.ok) {
+            statusEl.innerHTML = '<span class="red">' + r.error + '</span>';
+            return;
+        }
+
+        // Show results
+        document.getElementById('btEmpty').style.display = 'none';
+        document.getElementById('btResults').style.display = 'block';
+        statusEl.innerHTML = '<span class="green">✓ 完成！' + r.trading_days_count + ' 个交易日，' + r.total_filled + ' 笔成交</span>';
+
+        // Metrics
+        var metricsHtml = '';
+        for (var i = 0; i < r.summary.length; i++) {
+            var s = r.summary[i];
+            metricsHtml +=
+                '<div class="bt-metric">' +
+                    '<div style="font-size:11px;color:var(--text3);margin-bottom:4px">' + s.name + '</div>' +
+                    '<div class="bt-metric-val ' + (s.return_pct >= 0 ? 'green' : 'red') + '">' + (s.return_pct >= 0 ? '+' : '') + s.return_pct.toFixed(1) + '%</div>' +
+                    '<div class="bt-metric-label">收益率</div>' +
+                    '<div style="font-size:11px;color:var(--text3);margin-top:4px">回撤 ' + s.max_drawdown.toFixed(1) + '%</div>' +
+                '</div>';
+        }
+        document.getElementById('btMetrics').innerHTML = metricsHtml;
+
+        // Chart
+        if (btChartInst) btChartInst.destroy();
+        var ctx = document.getElementById('btChart').getContext('2d');
+        var colors = ['#38bdf8','#22c55e','#a78bfa','#fbbf24','#f472b6','#fb923c'];
+        var datasets = [];
+        var ci = 0;
+        for (var name in r.values) {
+            if (r.values.hasOwnProperty(name)) {
+                datasets.push({
+                    label: name,
+                    data: r.values[name],
+                    borderColor: colors[ci % colors.length],
+                    backgroundColor: 'transparent',
+                    tension: 0.3,
+                    pointRadius: 0,
+                    borderWidth: 2
+                });
+                ci++;
+            }
+        }
+        btChartInst = new Chart(ctx, {
+            type: 'line',
+            data: { labels: r.dates, datasets: datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { labels: { color: '#94a3b8', usePointStyle: true, boxWidth: 8, padding: 12 } },
+                    tooltip: { callbacks: { label: function(c) { return c.dataset.label + ': ¥' + c.parsed.y.toFixed(2); } } }
+                },
+                scales: {
+                    x: { ticks: { color: '#64748b', maxTicksLimit: 10 }, grid: { color: '#1e293b' } },
+                    y: { ticks: { color: '#64748b', callback: function(v) { return '¥' + v.toFixed(0); } }, grid: { color: '#1e293b' } }
+                }
+            }
+        });
+    } catch (e) {
+        setLoading(btn, false);
+        statusEl.innerHTML = '<span class="red">回测失败: ' + e.message + '</span>';
+    }
+}
+
+// ── Init ──
+document.getElementById('btEnd').value = new Date().toISOString().slice(0, 10);
+var d = new Date();
+d.setMonth(d.getMonth() - 3);
+document.getElementById('btStart').value = d.toISOString().slice(0, 10);
+</script>
+{% endblock %}

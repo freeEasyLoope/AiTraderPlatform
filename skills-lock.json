@@ -1,0 +1,130 @@
+{
+  "version": 1,
+  "skills": {
+    "company-valuation": {
+      "source": "C:\\Users\\kid\\AppData\\Local\\Temp\\finance-skills-extracted\\finance-skills-main",
+      "sourceType": "local",
+      "computedHash": "6304beb019c1fc63e002d06d97df35e95f972c6b4fe9ad5289ec53ffab9e0c7a"
+    },
+    "discord-reader": {
+      "source": "C:\\Users\\kid\\AppData\\Local\\Temp\\finance-skills-extracted\\finance-skills-main",
+      "sourceType": "local",
+      "computedHash": "920fb8f80f2582b90bd946f2b9d60f2367c6e8a7974d11cdc49d941c829286d1"
+    },
+    "earnings-preview": {
+      "source": "C:\\Users\\kid\\AppData\\Local\\Temp\\finance-skills-extracted\\finance-skills-main",
+      "sourceType": "local",
+      "computedHash": "a223be567e9a70235b57d5d6464a1b42ff14729b8a002534ac00436164959725"
+    },
+    "earnings-recap": {
+      "source": "C:\\Users\\kid\\AppData\\Local\\Temp\\finance-skills-extracted\\finance-skills-main",
+      "sourceType": "local",
+      "computedHash": "c5817b4ae81c35ec7d489228e580d3c446f896cc86a24c5b0d420e065ed10090"
+    },
+    "estimate-analysis": {
+      "source": "C:\\Users\\kid\\AppData\\Local\\Temp\\finance-skills-extracted\\finance-skills-main",
+      "sourceType": "local",
+      "computedHash": "91e8bbd93d5531e126f2114c0070917876e2a77ecc6b1b01819ffcc27ee3af63"
+    },
+    "etf-premium": {
+      "source": "C:\\Users\\kid\\AppData\\Local\\Temp\\finance-skills-extracted\\finance-skills-main",
+      "sourceType": "local",
+      "computedHash": "3bc1cb17a2d5a30f2bcdbfa28317295f476e041cb35802570243eff1aa416614"
+    },
+    "finance-sentiment": {
+      "source": "C:\\Users\\kid\\AppData\\Local\\Temp\\finance-skills-extracted\\finance-skills-main",
+      "sourceType": "local",
+      "computedHash": "e53e73f0c63a3ee617181775b1084463b3a995bccd6b4ee250fb9838e6a5c1db"
+    },
+    "frontend-design": {
+      "source": "C:\\Users\\kid\\AppData\\Local\\Temp\\skills-repo-extract\\anthropics-skills-c30d329\\skills\\frontend-design",
+      "sourceType": "local",
+      "computedHash": "063a0e6448123cd359ad0044cc46b0e490cc7964d45ef4bb9fd842bd2ffbca67"
+    },
+    "funda-data": {
+      "source": "C:\\Users\\kid\\AppData\\Local\\Temp\\finance-skills-extracted\\finance-skills-main",
+      "sourceType": "local",
+      "computedHash": "81c57e03dc8b6b7a678451f0537f7e310fee7d18c6b6e426784d7273d766d509"
+    },
+    "generative-ui": {
+      "source": "C:\\Users\\kid\\AppData\\Local\\Temp\\finance-skills-extracted\\finance-skills-main",
+      "sourceType": "local",
+      "computedHash": "ad9f102ab4a7edf1a70357f549d9c8bc8c7aad18432b52ce88a0d5042cad2baa"
+    },
+    "hormuz-strait": {
+      "source": "C:\\Users\\kid\\AppData\\Local\\Temp\\finance-skills-extracted\\finance-skills-main",
+      "sourceType": "local",
+      "computedHash": "eec6dd62755534934ae270a97443b191ac227d7b4dfbe953d01e209ac12f02bf"
+    },
+    "linkedin-reader": {
+      "source": "C:\\Users\\kid\\AppData\\Local\\Temp\\finance-skills-extracted\\finance-skills-main",
+      "sourceType": "local",
+      "computedHash": "2b2908019c51a0d9dc2d929a051dbf6581e3b4f29e6ce896b7d99946639ebc79"
+    },
+    "opencli-reader": {
+      "source": "C:\\Users\\kid\\AppData\\Local\\Temp\\finance-skills-extracted\\finance-skills-main",
+      "sourceType": "local",
+      "computedHash": "2554d9fab51606dd8bc349448bdd9302775223783b056fa668ea3e54334d286e"
+    },
+    "options-payoff": {
+      "source": "C:\\Users\\kid\\AppData\\Local\\Temp\\finance-skills-extracted\\finance-skills-main",
+      "sourceType": "local",
+      "computedHash": "e166513d1468ef93c701493c5b9bf397b1dbe2b39733aefb39ee9ebea8e1aea3"
+    },
+    "saas-valuation-compression": {
+      "source": "C:\\Users\\kid\\AppData\\Local\\Temp\\finance-skills-extracted\\finance-skills-main",
+      "sourceType": "local",
+      "computedHash": "c0489554e2d9d919f80786cd839f949065c191d34de34c5a37eb521259261431"
+    },
+    "sepa-strategy": {
+      "source": "C:\\Users\\kid\\AppData\\Local\\Temp\\finance-skills-extracted\\finance-skills-main",
+      "sourceType": "local",
+      "computedHash": "494452880043f2cc9dba7a9f1cd6c77d9c08b2ce198c9f69603b356b171273f7"
+    },
+    "skill-creator": {
+      "source": "C:\\Users\\kid\\AppData\\Local\\Temp\\finance-skills-extracted\\finance-skills-main",
+      "sourceType": "local",
+      "computedHash": "567dca94d02cb739cbc62ad36e7013ebf694f384d1ad55393d2d75f5f8876116"
+    },
+    "startup-analysis": {
+      "source": "C:\\Users\\kid\\AppData\\Local\\Temp\\finance-skills-extracted\\finance-skills-main",
+      "sourceType": "local",
+      "computedHash": "1755081b7216cfa7646f7b31158bb43d51e248d9554d1ebd9876aee2fde03446"
+    },
+    "stock-correlation": {
+      "source": "C:\\Users\\kid\\AppData\\Local\\Temp\\finance-skills-extracted\\finance-skills-main",
+      "sourceType": "local",
+      "computedHash": "dc0857647afe49cce783e3bef6a1ec593cc7ea9acc7505ff52970059bffa2b9e"
+    },
+    "stock-liquidity": {
+      "source": "C:\\Users\\kid\\AppData\\Local\\Temp\\finance-skills-extracted\\finance-skills-main",
+      "sourceType": "local",
+      "computedHash": "5ec869db71f7d79d8a76bbc4d6fa1fb712671fc6aea49c682ed52a012494140c"
+    },
+    "telegram-reader": {
+      "source": "C:\\Users\\kid\\AppData\\Local\\Temp\\finance-skills-extracted\\finance-skills-main",
+      "sourceType": "local",
+      "computedHash": "a467cfced12bc50cb8906c7eb7e47a131807320d028b6253a7e3ac0017be963d"
+    },
+    "tradingview-reader": {
+      "source": "C:\\Users\\kid\\AppData\\Local\\Temp\\finance-skills-extracted\\finance-skills-main",
+      "sourceType": "local",
+      "computedHash": "86450e34e8d19b36cea551b032790771c693f9e9d58bd7a6633509429ead8956"
+    },
+    "twitter-reader": {
+      "source": "C:\\Users\\kid\\AppData\\Local\\Temp\\finance-skills-extracted\\finance-skills-main",
+      "sourceType": "local",
+      "computedHash": "f11fec2ad7b08c63231b6d95d53e726b00c2667bf39157fd7d8e6196df5031a8"
+    },
+    "yc-reader": {
+      "source": "C:\\Users\\kid\\AppData\\Local\\Temp\\finance-skills-extracted\\finance-skills-main",
+      "sourceType": "local",
+      "computedHash": "9276bfb806529ae5a99a8acd79703a72fc67e807b84ee26756ad7c33359d87e8"
+    },
+    "yfinance-data": {
+      "source": "C:\\Users\\kid\\AppData\\Local\\Temp\\finance-skills-extracted\\finance-skills-main",
+      "sourceType": "local",
+      "computedHash": "63f3c8c26d63c2e30d96c58230c940c2024f9d754b0d369d9fdeec5208079193"
+    }
+  }
+}

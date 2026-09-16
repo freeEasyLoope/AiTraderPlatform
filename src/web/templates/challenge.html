@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="section-header">
+    <div>
+        <h1>🏆 模拟挑战</h1>
+        <p class="page-subtitle">创建你自己的策略，与六位 AI 操盘手同台竞技</p>
+    </div>
+    <button class="help-toggle" onclick="document.getElementById('helpBox').classList.toggle('show')">? 规则说明</button>
+</div>
+
+<div class="help-box" id="helpBox">
+    <p><strong>🏆 模拟挑战模式怎么玩？</strong></p>
+    <p>• 创建一个<strong>"挑战者"</strong>——你手动配置策略参数（或从零开始调）。</p>
+    <p>• 挑战者和六位 AI 操盘手在<strong>同一市场、同一资金</strong>（¥10,000）下运行。</p>
+    <p>• 挑战者的买卖操作通过<a href="/control" style="color:var(--accent)">控制台</a>的参数调整来实现——你调参，系统自动交易。</p>
+    <p>• 排行榜实时更新，看你能不能跑赢 AI。</p>
+    <p style="margin-top:8px;color:var(--yellow)">⚠ 挑战模式是一个学习工具，帮助你理解参数调整如何影响策略表现。</p>
+</div>
+
+<!-- 排行榜 -->
+<div class="card card-highlight">
+    <h2>📊 实时排名</h2>
+    <p class="text-muted mb-8">¥10,000 初始资金 · 同一市场 · 公平竞技</p>
+    <table>
+        <thead><tr><th style="width:50px">排名</th><th>选手</th><th>策略</th><th>类型</th><th>总资产</th><th>收益率</th></tr></thead>
+        <tbody id="rankingBody">
+        {% for r in rankings %}
+        <tr>
+            <td>
+                {% if loop.index == 1 %}🥇
+                {% elif loop.index == 2 %}🥈
+                {% elif loop.index == 3 %}🥉
+                {% elif loop.index == 7 %}🏅
+                {% else %}{{ loop.index }}{% endif %}
+            </td>
+            <td>
+                <strong>{{ r.name }}</strong>
+                {% if '挑战者' in r.name %}
+                <span class="badge badge-purple">你</span>
+                {% endif %}
+            </td>
+            <td style="font-size:12px;color:var(--text3)">{{ r.strategy }}</td>
+            <td>
+                <span class="badge {{ 'badge-buy' if r.group == 'short' else 'badge-purple' if r.group == 'long' else 'badge-fill' }}">
+                    {{ '短线' if r.group == 'short' else '长线' if r.group == 'long' else '挑战' }}
+                </span>
+            </td>
+            <td>¥{{ "%.2f"|format(r.total_value) }}</td>
+            <td class="{{ 'green' if r.return_pct >= 0 else 'red' }}">
+                <strong>{{ "%+.1f"|format(r.return_pct) }}%</strong>
+            </td>
+        </tr>
+        {% endfor %}
+        {% if not rankings %}
+        <tr><td colspan="6" style="text-align:center;color:var(--text3);padding:20px">暂无选手数据</td></tr>
+        {% endif %}
+        </tbody>
+    </table>
+
+    <div class="flex-center mt-12">
+        <button class="btn-ghost btn-xs" onclick="refreshRankings()">🔄 刷新排行</button>
+    </div>
+</div>
+
+<!-- 挑战者状态 -->
+<div class="grid-2 mt-16">
+    {% if challenger %}
+    <div class="card card-highlight">
+        <h2>🎯 你的挑战者</h2>
+        <div class="stats" style="grid-template-columns:1fr 1fr;margin-bottom:12px">
+            <div class="stat" style="background:var(--bg)">
+                <div class="value cyan">¥{{ "%.2f"|format(challenger.total_value) }}</div>
+                <div class="label">总资产</div>
+            </div>
+            <div class="stat" style="background:var(--bg)">
+                <div class="value {{ 'green' if challenger.return_pct >= 0 else 'red' }}">
+                    {{ "%+.1f"|format(challenger.return_pct) }}%
+                </div>
+                <div class="label">收益率</div>
+            </div>
+        </div>
+
+        <div style="font-size:13px;color:var(--text2);line-height:1.8">
+            <p>📦 <strong>持仓：</strong>{{ challenger.position_count }} 只</p>
+            <p>💰 <strong>可用现金：</strong>¥{{ "%.2f"|format(challenger.cash) }}</p>
+        </div>
+
+        {% if challenger.positions %}
+        <div class="table-wrap mt-12">
+            <table>
+                <thead><tr><th>代码</th><th>名称</th><th>持有</th><th>成本</th></tr></thead>
+                <tbody>
+                {% for p in challenger.positions %}
+                <tr>
+                    <td><span onclick="openStock('{{ p.symbol }}')" class="stock-link link">{{ p.symbol }}</span></td>
+                    <td>{{ p.name }}</td>
+                    <td>{{ p.shares }}股</td>
+                    <td>¥{{ "%.2f"|format(p.avg_cost) }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        <div class="btn-group mt-12">
+            <a href="/control" class="btn btn-sm">⚙ 调整参数</a>
+            <a href="/reports" class="btn btn-ghost btn-sm">📋 查看报告</a>
+        </div>
+    </div>
+    {% else %}
+    <div class="card card-highlight" style="text-align:center">
+        <div class="empty-state">
+            <div class="empty-icon">🏆</div>
+            <p style="font-size:16px">你还没有创建挑战者</p>
+            <p class="text-muted">输入你的挑战者名字，系统将创建一个由你控制的策略操盘手</p>
+            <div class="flex-center mt-12" style="gap:8px">
+                <input id="challengerName" placeholder="给你的挑战者起个名" value="挑战者" style="padding:10px 14px;font-size:14px;width:200px">
+                <button onclick="createChallenger()">🚀 创建挑战者</button>
+            </div>
+            <div id="createMsg" class="text-muted mt-8"></div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+        <h2>🎯 挑战指南</h2>
+        <div style="font-size:13px;color:var(--text2);line-height:1.9">
+            <p><strong>1. 选一个基准策略</strong></p>
+            <p class="text-muted">去<a href="/strategies" style="color:var(--accent)">策略实验室</a>看策略画像，选一个最接近你想法的策略作为起点。</p>
+
+            <p style="margin-top:12px"><strong>2. 调参数，看回测</strong></p>
+            <p class="text-muted">在<a href="/control" style="color:var(--accent)">控制台</a>修改你挑战者的参数，然后在策略实验室回测验证。</p>
+
+            <p style="margin-top:12px"><strong>3. 观察至少 2-4 周</strong></p>
+            <p class="text-muted">短期波动是噪音。给策略足够时间经历不同行情（上涨、下跌、震荡）。</p>
+
+            <p style="margin-top:12px"><strong>4. 复盘总结</strong></p>
+            <p class="text-muted">在<a href="/reports" style="color:var(--accent)">AI 周报</a>中看你的 Alpha、回撤、夏普比率——和 AI 操盘手对比，找到差距。</p>
+        </div>
+    </div>
+</div>
+
+<!-- 学习要点 -->
+<div class="card mt-16" style="background:linear-gradient(135deg,rgba(56,189,248,.03),rgba(129,140,248,.03))">
+    <h2>🧠 从挑战中学到什么</h2>
+    <div class="grid-3">
+        <div>
+            <h3 style="font-size:13px;color:var(--accent);margin-bottom:6px">纪律 > 直觉</h3>
+            <p style="font-size:12px;color:var(--text2);line-height:1.6">
+                AI 操盘手从不情绪化交易——该止损时绝不含糊。人类的优势是理解更复杂的逻辑，但纪律是基础。
+            </p>
+        </div>
+        <div>
+            <h3 style="font-size:13px;color:var(--accent);margin-bottom:6px">没有人全对</h3>
+            <p style="font-size:12px;color:var(--text2);line-height:1.6">
+                六位操盘手在不同行情下轮流领先——没有一种策略永远跑赢。重点是找到适合当前行情的策略组合。
+            </p>
+        </div>
+        <div>
+            <h3 style="font-size:13px;color:var(--accent);margin-bottom:6px">参数是杠杆</h3>
+            <p style="font-size:12px;color:var(--text2);line-height:1.6">
+                把止损从-8%调到-5%，看起来只差3%，但在震荡市中可能从"反复止损"变成"稳定盈利"。
+            </p>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function createChallenger() {
+    var name = document.getElementById('challengerName').value.trim() || '挑战者';
+    var msgEl = document.getElementById('createMsg');
+    msgEl.textContent = '创建中...';
+    try {
+        var resp = await fetch('/api/challenge/create', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name: name})
+        });
+        var r = await resp.json();
+        if (r.ok) {
+            msgEl.innerHTML = '<span class="green">✓ ' + r.message + ' 刷新页面...</span>';
+            setTimeout(function() { location.reload(); }, 1000);
+        } else {
+            msgEl.innerHTML = '<span class="red">创建失败: ' + (r.message || '') + '</span>';
+        }
+    } catch (e) {
+        msgEl.innerHTML = '<span class="red">请求失败: ' + e.message + '</span>';
+    }
+}
+
+async function refreshRankings() {
+    try {
+        var resp = await fetch('/api/challenge/rankings');
+        var r = await resp.json();
+        if (!r.ok) return;
+        var html = '';
+        var medals = ['🥇','🥈','🥉'];
+        for (var i = 0; i < r.rankings.length; i++) {
+            var rank = r.rankings[i];
+            var groupLabel = rank.group === 'short' ? '短线' : rank.group === 'long' ? '长线' : '挑战';
+            var groupBadge = rank.group === 'short' ? 'badge-buy' : rank.group === 'long' ? 'badge-purple' : 'badge-fill';
+            var isChallenger = rank.group === 'challenge';
+            html += '<tr>' +
+                '<td>' + (i < 3 ? medals[i] : i === r.rankings.length - 1 && isChallenger ? '🏅' : i + 1) + '</td>' +
+                '<td><strong>' + rank.name + '</strong>' + (isChallenger ? ' <span class="badge badge-purple">你</span>' : '') + '</td>' +
+                '<td style="font-size:12px;color:var(--text3)">' + rank.strategy + '</td>' +
+                '<td><span class="badge ' + groupBadge + '">' + groupLabel + '</span></td>' +
+                '<td>¥' + rank.total_value.toFixed(2) + '</td>' +
+                '<td class="' + (rank.return_pct >= 0 ? 'green' : 'red') + '"><strong>' + (rank.return_pct >= 0 ? '+' : '') + rank.return_pct.toFixed(1) + '%</strong></td>' +
+            '</tr>';
+        }
+        document.getElementById('rankingBody').innerHTML = html;
+    } catch (e) {}
+}
+</script>
+{% endblock %}

@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="flex-between" style="margin-bottom:16px">
+    <h1 style="font-size:20px">策略控制台</h1>
+    <div style="display:flex;gap:8px">
+        <button class="ghost" onclick="toggleAll()" style="font-size:12px;padding:6px 14px">展开全部</button>
+        <button class="help-toggle" onclick="document.getElementById('helpBox').classList.toggle('show')">? 参数说明</button>
+    </div>
+</div>
+
+<div class="help-box" id="helpBox">
+    <p><strong>如何调整策略参数？</strong></p>
+    <p>• 修改后点击"保存"，下次交易生效。当前持仓不受影响。</p>
+    <p>• <strong>止损线</strong>：跌超此比例卖出。太小频繁止损，太大亏损不可控。建议 -5% ~ -15%。</p>
+    <p>• <strong>止盈线</strong>：涨超此比例卖出。建议 20% ~ 50%。</p>
+    <p>• <strong>最大持仓</strong>：同时持有几只。太少集中风险，太多管不过来。建议 3~10 只。</p>
+    <p>• <strong>MA周期</strong>：短周期灵敏假信号多，长周期稳定反应慢。</p>
+    <p>• <strong>RSI阈值</strong>：低于此值=超卖买入，高于此值=超买卖出。</p>
+    <p>• <strong>⚠ 注意</strong>：修改后立即生效（下次交易时使用）。</p>
+</div>
+
+{% if message %}
+<div class="toast toast-ok" id="toast">{{ message }}</div>
+{% endif %}
+
+{% for t in traders %}
+<div class="card" style="padding:0;overflow:hidden">
+    <div class="flex-between card-header" onclick="toggleCard(this)" style="padding:16px 20px;cursor:pointer;user-select:none;transition:.2s">
+        <div style="display:flex;align-items:center;gap:12px">
+            <span class="collapse-icon" style="font-size:12px;transition:.2s;color:var(--text3)">▼</span>
+            <strong style="font-size:15px">{{ t.name }}</strong>
+            <span class="badge badge-{{ 'buy' if t.group == 'short' else 'sell' }}" style="font-size:11px">{{ '短线' if t.group == 'short' else '长线' }}</span>
+            <span class="text-muted">{{ t.class }}</span>
+        </div>
+        <span style="font-size:12px;color:var(--text3)">{{ t.params|length }} 项参数</span>
+    </div>
+    <div class="card-body" style="padding:0 20px 16px">
+        {% if t.params %}
+        {% for k, v in t.params.items() %}
+        <div class="param-row">
+            <label class="pname" data-key="{{ k }}">{{ k }}</label>
+            {% if k in ('universe', 'bollinger_touch', 'etf_symbol') %}
+            <select data-trader="{{ t.name }}" data-param="{{ k }}" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 12px;border-radius:8px;font-size:14px;min-width:140px">
+                {% if k == 'universe' %}
+                <option value="hs300" {{ 'selected' if v == 'hs300' else '' }}>沪深300 (hs300)</option>
+                <option value="all" {{ 'selected' if v == 'all' else '' }}>全市场 (all)</option>
+                <option value="dividend_index" {{ 'selected' if v == 'dividend_index' else '' }}>红利指数 (dividend_index)</option>
+                <option value="etf" {{ 'selected' if v == 'etf' else '' }}>ETF (etf)</option>
+                <option value="macro" {{ 'selected' if v == 'macro' else '' }}>宏观组合 (macro)</option>
+                {% elif k == 'bollinger_touch' %}
+                <option value="lower" {{ 'selected' if v == 'lower' else '' }}>下轨 (lower)</option>
+                <option value="upper" {{ 'selected' if v == 'upper' else '' }}>上轨 (upper)</option>
+                {% elif k == 'etf_symbol' %}
+                <option value="510300" {{ 'selected' if v == '510300' else '' }}>沪深300ETF (510300)</option>
+                <option value="510050" {{ 'selected' if v == '510050' else '' }}>上证50ETF (510050)</option>
+                <option value="159915" {{ 'selected' if v == '159915' else '' }}>创业板ETF (159915)</option>
+                {% endif %}
+            </select>
+            {% else %}
+            <input type="{% if k in ('stop_loss','take_profit','pe_threshold','min_dividend_yield','sell_dividend_yield','rebalance_threshold','shibor_shift','stock_weight','bond_weight','gold_weight','pb_max','max_pb','volume_ratio') %}number{% else %}text{% endif %}"
+                   value="{{ v }}" step="any"
+                   data-trader="{{ t.name }}" data-param="{{ k }}"
+                   style="{% if 'weight' in k or 'dividend' in k or 'threshold' in k or k in ('take_profit','stop_loss','pe_threshold','volume_ratio','shibor_shift') %}width:90px{% endif %}">
+            {% endif %}
+            <span class="desc" data-pkey="{{ k }}"></span>
+        </div>
+        {% endfor %}
+        <button onclick="saveParams('{{ t.name }}')" style="margin-top:8px">保存参数</button>
+        <span class="save-status text-muted" style="margin-left:12px;display:none"></span>
+        {% else %}
+        <p class="text-muted" style="padding:12px 0">该策略没有可调参数</p>
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PARAM_NAMES = {
+    max_positions:'最大持仓数', pe_threshold:'PE阈值', pb_max:'PB上限',
+    take_profit:'止盈线', stop_loss:'止损线', ma_short:'短期均线', ma_long:'长期均线',
+    volume_ratio:'放量倍率', rsi_oversold:'RSI超卖线', rsi_overbought:'RSI超买线',
+    bollinger_touch:'布林触发', max_hold_days:'最长持有天数',
+    min_dividend_yield:'最低股息率', sell_dividend_yield:'卖出股息率',
+    max_pb:'市净率上限', weekly_amount:'每周定投金额', etf_symbol:'定投标的',
+    universe:'选股范围', stock_weight:'股票比例', bond_weight:'债券比例',
+    gold_weight:'黄金比例', rebalance_threshold:'再平衡阈值', shibor_shift:'利率阈值',
+};
+const PARAM_HINTS = {
+    max_positions:'同时最多持有几只。3~5只较合理。',
+    pe_threshold:'PE低于行业均值×此值才买。越小越严。',
+    pb_max:'PB超过此值不买。银行股通常<1。',
+    take_profit:'涨超此比例卖出止盈。建议0.20~0.50。',
+    stop_loss:'跌超此比例卖出止损。建议-0.05~-0.15。',
+    ma_short:'短期均线天数。常用5日。越小越灵敏。',
+    ma_long:'长期均线天数。常用20日。',
+    volume_ratio:'成交量放大倍数。1.5=1.5倍。',
+    rsi_oversold:'RSI低于此值=超卖买入。常用30。',
+    rsi_overbought:'RSI高于此值=超买卖出。常用70。',
+    bollinger_touch:'触哪侧交易。下轨买入，上轨卖出。',
+    max_hold_days:'最长持仓天数。超过强制卖出。',
+    min_dividend_yield:'股息率>此值才买。0.03=3%。',
+    sell_dividend_yield:'股息率<此值就卖。0.02=2%。',
+    max_pb:'市净率上限。红利股通常<1.5。',
+    weekly_amount:'每周定投金额。太少买不起一手。',
+    etf_symbol:'定投哪个ETF。510300=沪深300。',
+    universe:'从哪个池子选股。hs300=大盘股。',
+    stock_weight:'股票目标占比。0.5=50%。',
+    bond_weight:'债券目标占比。',
+    gold_weight:'黄金目标占比。',
+    rebalance_threshold:'偏离多少触发再平衡。0.05=5%。',
+    shibor_shift:'利率变动多少时调整配置。',
+};
+
+// 中文标签和提示
+document.querySelectorAll('.pname').forEach(el => {
+    const k = el.dataset.key;
+    if (PARAM_NAMES[k]) el.textContent = PARAM_NAMES[k];
+});
+document.querySelectorAll('.desc').forEach(el => {
+    const k = el.dataset.pkey;
+    if (k && PARAM_HINTS[k]) el.textContent = PARAM_HINTS[k];
+});
+
+// 折叠卡片
+function toggleCard(header) {
+    const body = header.nextElementSibling;
+    const icon = header.querySelector('.collapse-icon');
+    const isOpen = body.style.display !== 'none';
+    body.style.display = isOpen ? 'none' : 'block';
+    icon.textContent = isOpen ? '▶' : '▼';
+}
+
+// 全部展开/收起
+let allOpen = true;
+function toggleAll() {
+    allOpen = !allOpen;
+    document.querySelectorAll('.card-body').forEach(b => b.style.display = allOpen ? 'block' : 'none');
+    document.querySelectorAll('.collapse-icon').forEach(i => i.textContent = allOpen ? '▼' : '▶');
+    document.querySelector('.ghost').textContent = allOpen ? '收起全部' : '展开全部';
+}
+
+// 保存
+async function saveParams(traderName) {
+    const inputs = document.querySelectorAll(`[data-trader="${traderName}"]`);
+    let ok = 0, fail = 0;
+    const statusEl = document.querySelector(`[data-trader="${traderName}"]`).closest('.card').querySelector('.save-status');
+    statusEl.style.display = 'inline';
+    statusEl.textContent = '保存中...';
+    statusEl.style.color = 'var(--yellow)';
+
+    for (const el of inputs) {
+        const body = JSON.stringify({trader: traderName, param: el.dataset.param, value: el.value});
+        const resp = await fetch('/api/control/update', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json; charset=utf-8'},
+            body: body,
+        });
+        const r = await resp.json();
+        r.ok ? ok++ : fail++;
+    }
+    statusEl.textContent = `已保存 ${ok} 项` + (fail ? `，${fail} 失败` : '');
+    statusEl.style.color = fail ? 'var(--red)' : 'var(--green)';
+    setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
+}
+</script>
+{% endblock %}

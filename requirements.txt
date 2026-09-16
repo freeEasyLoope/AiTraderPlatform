@@ -1,0 +1,36 @@
+# AITrader 运行依赖（本地与部署平台都会读这个文件，勿放测试依赖）
+#
+# 说明：
+#   - web 服务最低需要 fastapi / uvicorn / jinja2，缺失会直接起不来。
+#   - akshare 会拉入较多传递依赖，构建耗时集中在它身上。
+#   - 开发/测试依赖见 requirements-dev.txt。
+
+# ── Web 服务 ──
+fastapi>=0.110
+uvicorn[standard]>=0.27
+jinja2>=3.1
+
+# ── 配置与环境 ──
+pyyaml>=6.0
+python-dotenv>=1.0
+
+# ── 存储 ──
+sqlalchemy>=2.0.0
+# 默认 SQLite 落持久卷，无需额外驱动。
+# 若将来改用托管数据库（平台注入 DATABASE_URL），再按平台数据库类型追加对应驱动包。
+
+# ── 数据源 ──
+pandas>=2.0.0
+numpy>=1.24.0
+akshare>=1.14.0
+baostock>=0.8.8
+
+# ── 定时任务（托管平台无 cron，需在 web 进程内调度） ──
+apscheduler>=3.10.0
+
+# ── LLM 周报（可选，无 ANTHROPIC_API_KEY 时相关接口自动降级） ──
+anthropic>=0.30.0
+
+# ── CLI ──
+typer>=0.12.0
+rich>=13.0.0

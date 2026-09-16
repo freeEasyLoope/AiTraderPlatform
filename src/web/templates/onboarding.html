@@ -1,0 +1,347 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="section-header">
+    <div>
+        <h1>🧭 新手向导</h1>
+        <p class="page-subtitle">三步找到适合你的投资策略</p>
+    </div>
+</div>
+
+<!-- 进度条 -->
+<div style="display:flex;gap:8px;margin-bottom:28px;align-items:center">
+    <div class="progress-bar" style="flex:1;height:8px;border-radius:4px">
+        <div class="progress-fill gradient" id="progressBar" style="width:33%"></div>
+    </div>
+    <span style="font-size:12px;color:var(--text3)" id="stepLabel">步骤 1/3</span>
+</div>
+
+<!-- ── 步骤 1: 投资性格测试 ── -->
+<div class="step-content" id="step1">
+    <h2 style="margin-bottom:20px">第1步：你的投资性格是什么？</h2>
+    <p class="text-muted mb-16">回答 4 个问题，帮你了解自己的风险偏好和投资风格。</p>
+
+    <div class="card" id="q1">
+        <h2>Q1: 你能承受多大的短期亏损？</h2>
+        <div class="grid-2">
+            <div class="persona-card" onclick="selectAnswer('q1','a',this)" data-value="a">
+                <span class="persona-emoji">😰</span>
+                <div class="persona-title">几乎不能</div>
+                <div class="persona-desc">亏损超过 3% 就会焦虑到睡不着</div>
+            </div>
+            <div class="persona-card" onclick="selectAnswer('q1','b',this)" data-value="b">
+                <span class="persona-emoji">😐</span>
+                <div class="persona-title">可以接受 -10%</div>
+                <div class="persona-desc">短期波动正常，只要长期能赚回来</div>
+            </div>
+            <div class="persona-card" onclick="selectAnswer('q1','c',this)" data-value="c">
+                <span class="persona-emoji">😎</span>
+                <div class="persona-title">可以接受 -20%+</div>
+                <div class="persona-desc">高波动才有高回报，理解风险是收益的代价</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mt-16" id="q2">
+        <h2>Q2: 你每天能花多少时间看盘？</h2>
+        <div class="grid-2">
+            <div class="persona-card" onclick="selectAnswer('q2','a',this)" data-value="a">
+                <span class="persona-emoji">⏰</span>
+                <div class="persona-title">几乎没有</div>
+                <div class="persona-desc">一周看一两次就够了，最好设好就忘</div>
+            </div>
+            <div class="persona-card" onclick="selectAnswer('q2','b',this)" data-value="b">
+                <span class="persona-emoji">📱</span>
+                <div class="persona-title">每天 10-30 分钟</div>
+                <div class="persona-desc">收盘后看一眼，周末做做功课</div>
+            </div>
+            <div class="persona-card" onclick="selectAnswer('q2','c',this)" data-value="c">
+                <span class="persona-emoji">🖥</span>
+                <div class="persona-title">可以盯盘</div>
+                <div class="persona-desc">盘中能关注，喜欢把握短线机会</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mt-16" id="q3">
+        <h2>Q3: 你的投资目标？</h2>
+        <div class="grid-2">
+            <div class="persona-card" onclick="selectAnswer('q3','a',this)" data-value="a">
+                <span class="persona-emoji">🛡</span>
+                <div class="persona-title">保值为主</div>
+                <div class="persona-desc">跑赢通胀就行，不要大起大落</div>
+            </div>
+            <div class="persona-card" onclick="selectAnswer('q3','b',this)" data-value="b">
+                <span class="persona-emoji">📈</span>
+                <div class="persona-title">稳健增值</div>
+                <div class="persona-desc">年化 8-15%，回撤控制在 15% 以内</div>
+            </div>
+            <div class="persona-card" onclick="selectAnswer('q3','c',this)" data-value="c">
+                <span class="persona-emoji">🚀</span>
+                <div class="persona-title">追求高收益</div>
+                <div class="persona-desc">愿意冒较大风险博取超额回报</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mt-16" id="q4">
+        <h2>Q4: 你更相信什么？</h2>
+        <div class="grid-2">
+            <div class="persona-card" onclick="selectAnswer('q4','a',this)" data-value="a">
+                <span class="persona-emoji">📊</span>
+                <div class="persona-title">数据和图表</div>
+                <div class="persona-desc">均线、RSI、成交量——技术指标告诉我一切</div>
+            </div>
+            <div class="persona-card" onclick="selectAnswer('q4','b',this)" data-value="b">
+                <span class="persona-emoji">📖</span>
+                <div class="persona-title">公司基本面</div>
+                <div class="persona-desc">PE、PB、ROE——好公司长期一定涨</div>
+            </div>
+            <div class="persona-card" onclick="selectAnswer('q4','c',this)" data-value="c">
+                <span class="persona-emoji">🌍</span>
+                <div class="persona-title">大趋势和宏观</div>
+                <div class="persona-desc">利率、政策、经济周期——自上而下看问题</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="flex-center mt-16">
+        <button onclick="goToStep2()" id="step1Btn" disabled>下一步 →</button>
+        <span class="text-muted" id="step1Hint" style="margin-left:12px">请回答全部 4 个问题</span>
+    </div>
+</div>
+
+<!-- ── 步骤 2: 策略匹配 ── -->
+<div class="step-content" id="step2" style="display:none">
+    <h2 style="margin-bottom:20px">第2步：你的最佳匹配</h2>
+    <p class="text-muted mb-16">基于你的回答，以下是与你投资性格最匹配的策略。</p>
+
+    <div class="grid-2" id="matchResult"></div>
+
+    <div class="card mt-16 card-highlight" id="matchExplanation"></div>
+
+    <div class="flex-center mt-16">
+        <button class="btn-ghost" onclick="goToStep1()">← 返回修改</button>
+        <button onclick="goToStep3()" style="margin-left:12px">进入 Dashboard →</button>
+    </div>
+</div>
+
+<!-- ── 步骤 3: Dashboard 导览 ── -->
+<div class="step-content" id="step3" style="display:none">
+    <h2 style="margin-bottom:20px">第3步：看懂你的交易终端</h2>
+    <p class="text-muted mb-16">AITrader 的核心页面和如何使用它们。</p>
+
+    <div class="grid-3">
+        <div class="card card-highlight" style="text-align:center">
+            <div style="font-size:40px;margin-bottom:12px">⊞</div>
+            <h2>总览 Dashboard</h2>
+            <p style="font-size:13px;color:var(--text2);line-height:1.7">
+                顶部横条告诉你当前市场是牛/熊/震荡。<br>
+                六条曲线 = 六位操盘手的净值。<br>
+                谁在上面谁跑得好——但也要看回撤。
+            </p>
+            <a href="/" class="link" style="font-size:13px">去总览 →</a>
+        </div>
+        <div class="card card-highlight" style="text-align:center">
+            <div style="font-size:40px;margin-bottom:12px">◈</div>
+            <h2>策略实验室</h2>
+            <p style="font-size:13px;color:var(--text2);line-height:1.7">
+                看策略画像找到适合你的风格。<br>
+                用历史回测验证策略在不同时期的表现。<br>
+                改一个参数，看收益怎么变。
+            </p>
+            <a href="/strategies" class="link" style="font-size:13px">去实验室 →</a>
+        </div>
+        <div class="card card-highlight" style="text-align:center">
+            <div style="font-size:40px;margin-bottom:12px">📡</div>
+            <h2>信号简报</h2>
+            <p style="font-size:13px;color:var(--text2);line-height:1.7">
+                每天收盘后看信号简报。<br>
+                六位操盘手对你的自选股发出买卖信号。<br>
+                多策略共识 = 高置信度。
+            </p>
+            <a href="/signals" class="link" style="font-size:13px">看信号 →</a>
+        </div>
+        <div class="card card-highlight" style="text-align:center">
+            <div style="font-size:40px;margin-bottom:12px">⚠</div>
+            <h2>风险实验室</h2>
+            <p style="font-size:13px;color:var(--text2);line-height:1.7">
+                选一场历史危机场景。<br>
+                看你的持仓在类似冲击下会跌多少。<br>
+                建立"最坏情况"意识。
+            </p>
+            <a href="/risk-lab" class="link" style="font-size:13px">做压力测试 →</a>
+        </div>
+        <div class="card card-highlight" style="text-align:center">
+            <div style="font-size:40px;margin-bottom:12px">🏆</div>
+            <h2>模拟挑战</h2>
+            <p style="font-size:13px;color:var(--text2);line-height:1.7">
+                手动调参数，创建你自己的挑战者。<br>
+                和六位 AI 操盘手同台竞技。<br>
+                看你能不能跑赢机器。
+            </p>
+            <a href="/challenge" class="link" style="font-size:13px">去挑战 →</a>
+        </div>
+        <div class="card card-highlight" style="text-align:center">
+            <div style="font-size:40px;margin-bottom:12px">🤖</div>
+            <h2>AI 周报</h2>
+            <p style="font-size:13px;color:var(--text2);line-height:1.7">
+                每周 AI 分析所有操盘手表现。<br>
+                排名 + 调参建议 + Alpha/Beta 归因。<br>
+                形成持续优化的闭环。
+            </p>
+            <a href="/reports" class="link" style="font-size:13px">看周报 →</a>
+        </div>
+    </div>
+
+    <div class="card mt-16" style="background:linear-gradient(135deg,rgba(56,189,248,.05),rgba(129,140,248,.05))">
+        <h2>💡 最后几点建议</h2>
+        <div style="font-size:13px;color:var(--text2);line-height:1.9">
+            <p>1. <strong>先观察，后动手</strong>——让六位操盘手跑至少 2-4 周，理解不同策略在不同行情下的表现。</p>
+            <p>2. <strong>关注信号逻辑，而非信号本身</strong>——理解"为什么趋势跟随者此时建议买入"比"买不买"更重要。</p>
+            <p>3. <strong>用风险实验室建立敬畏心</strong>——只有知道最坏情况可能亏多少，才能真正控制好仓位。</p>
+            <p>4. <strong>没有人能预测市场</strong>——包括这六位 AI 操盘手。它们只是帮你理解不同方法的工具。</p>
+        </div>
+    </div>
+
+    <div class="flex-center mt-16">
+        <button onclick="finishOnboarding()">✅ 完成！记住我的结果</button>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+var answers = {q1:null, q2:null, q3:null, q4:null};
+
+function selectAnswer(question, value, el) {
+    answers[question] = value;
+    // 视觉反馈
+    el.parentElement.querySelectorAll('.persona-card').forEach(function(c) { c.classList.remove('selected'); });
+    el.classList.add('selected');
+
+    // 检查是否全部回答
+    var allAnswered = Object.values(answers).every(function(v) { return v !== null; });
+    document.getElementById('step1Btn').disabled = !allAnswered;
+    document.getElementById('step1Hint').textContent = allAnswered ? '已全部回答 ✓' : '请回答全部 4 个问题';
+}
+
+function goToStep1() {
+    switchStep(1);
+}
+
+function goToStep2() {
+    if (!Object.values(answers).every(function(v) { return v !== null; })) return;
+    computeMatch();
+    switchStep(2);
+}
+
+function goToStep3() {
+    switchStep(3);
+}
+
+function switchStep(n) {
+    document.querySelectorAll('.step-content').forEach(function(s) { s.style.display = 'none'; });
+    document.getElementById('step' + n).style.display = 'block';
+    document.getElementById('progressBar').style.width = (n * 33) + '%';
+    document.getElementById('stepLabel').textContent = '步骤 ' + n + '/3';
+    window.scrollTo({top:0, behavior:'smooth'});
+}
+
+function computeMatch() {
+    // 评分：每个答案对应策略倾向
+    var scores = {
+        '趋势跟随者': 0, '均值回归者': 0, '宏观对冲者': 0,
+        '价值猎手': 0, '红利收集者': 0, '指数定投者': 0
+    };
+
+    // Q1: 风险承受
+    if (answers.q1 === 'a') { scores['红利收集者'] += 3; scores['指数定投者'] += 3; scores['宏观对冲者'] += 2; }
+    if (answers.q1 === 'b') { scores['价值猎手'] += 2; scores['宏观对冲者'] += 2; scores['趋势跟随者'] += 1; }
+    if (answers.q1 === 'c') { scores['趋势跟随者'] += 3; scores['均值回归者'] += 2; scores['价值猎手'] += 1; }
+
+    // Q2: 时间投入
+    if (answers.q2 === 'a') { scores['指数定投者'] += 3; scores['红利收集者'] += 3; scores['价值猎手'] += 2; }
+    if (answers.q2 === 'b') { scores['价值猎手'] += 2; scores['宏观对冲者'] += 2; scores['均值回归者'] += 2; }
+    if (answers.q2 === 'c') { scores['趋势跟随者'] += 3; scores['均值回归者'] += 3; scores['宏观对冲者'] += 1; }
+
+    // Q3: 目标
+    if (answers.q3 === 'a') { scores['红利收集者'] += 3; scores['指数定投者'] += 3; scores['宏观对冲者'] += 2; }
+    if (answers.q3 === 'b') { scores['价值猎手'] += 3; scores['宏观对冲者'] += 2; scores['趋势跟随者'] += 1; }
+    if (answers.q3 === 'c') { scores['趋势跟随者'] += 3; scores['均值回归者'] += 3; scores['价值猎手'] += 1; }
+
+    // Q4: 方法偏好
+    if (answers.q4 === 'a') { scores['趋势跟随者'] += 3; scores['均值回归者'] += 3; scores['指数定投者'] += 1; }
+    if (answers.q4 === 'b') { scores['价值猎手'] += 3; scores['红利收集者'] += 3; scores['指数定投者'] += 2; }
+    if (answers.q4 === 'c') { scores['宏观对冲者'] += 3; scores['红利收集者'] += 1; scores['价值猎手'] += 1; }
+
+    // 排序
+    var ranked = Object.entries(scores).sort(function(a, b) { return b[1] - a[1]; });
+
+    var strategyProfiles = {
+        '趋势跟随者': {emoji:'🏄', color:'#22c55e', desc:'顺势而为的技术派。在趋势明确的市场中表现最佳。', link:'/trader/'},
+        '均值回归者': {emoji:'🎣', color:'#a78bfa', desc:'逆向思维，在超卖时入场。震荡市的收割机。', link:'/trader/'},
+        '宏观对冲者': {emoji:'🌐', color:'#fb923c', desc:'自上而下的大局观。在股/债/金之间灵活轮动。', link:'/trader/'},
+        '价值猎手': {emoji:'🔍', color:'#38bdf8', desc:'耐心等待好公司打折。相信价格终将反映价值。', link:'/trader/'},
+        '红利收集者': {emoji:'💎', color:'#fbbf24', desc:'稳健收息，靠分红赚钱。熊市中的避风港。', link:'/trader/'},
+        '指数定投者': {emoji:'🐢', color:'#f472b6', desc:'不选股不择时。坚持定投，让时间成为朋友。', link:'/trader/'},
+    };
+
+    // 渲染结果
+    var html = '';
+    for (var i = 0; i < ranked.length; i++) {
+        var name = ranked[i][0], score = ranked[i][1];
+        var p = strategyProfiles[name];
+        var maxScore = ranked[0][1];
+        var matchPct = Math.round(score / maxScore * 100);
+        var isTop = i === 0;
+
+        html += '<div class="card' + (isTop ? ' card-highlight' : '') + '" style="padding:18px;margin-bottom:0">' +
+            '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
+                '<span style="font-size:28px">' + p.emoji + '</span>' +
+                '<div>' +
+                    '<div style="font-weight:700;font-size:15px;color:' + p.color + '">' + name +
+                        (isTop ? ' <span class="badge badge-buy">最佳匹配</span>' : '') +
+                    '</div>' +
+                    '<div style="font-size:11px;color:var(--text3)">匹配度 ' + matchPct + '%</div>' +
+                '</div>' +
+            '</div>' +
+            '<p style="font-size:12px;color:var(--text2)">' + p.desc + '</p>' +
+            '<div class="progress-bar mt-8"><div class="progress-fill gradient" style="width:' + matchPct + '%"></div></div>' +
+        '</div>';
+    }
+    document.getElementById('matchResult').innerHTML = html;
+
+    // 解释
+    document.getElementById('matchExplanation').innerHTML =
+        '<h2>📖 为什么是这个结果？</h2>' +
+        '<p style="font-size:13px;color:var(--text2);line-height:1.9">' +
+        '根据你的回答：' +
+        (answers.q1 === 'a' ? '风险承受低、' : answers.q1 === 'b' ? '中等风险承受、' : '高风险承受、') +
+        (answers.q2 === 'a' ? '没时间盯盘、' : answers.q2 === 'b' ? '有时间做功课、' : '可以积极交易、') +
+        (answers.q3 === 'a' ? '追求保值、' : answers.q3 === 'b' ? '稳健增值、' : '追求高收益、') +
+        (answers.q4 === 'a' ? '相信技术分析。' : answers.q4 === 'b' ? '相信基本面。' : '相信宏观趋势。') +
+        '</p>' +
+        '<p style="font-size:13px;color:var(--text2);margin-top:8px">' +
+        '系统推荐 <strong style="color:' + strategyProfiles[ranked[0][0]].color + '">' + ranked[0][0] + '</strong> 作为你的首选策略。' +
+        '点击上方卡片查看各策略的详细画像，或在 <a href="/strategies" style="color:var(--accent)">策略实验室</a> 中深入了解。' +
+        '</p>';
+}
+
+function finishOnboarding() {
+    localStorage.setItem('aitrader_onboarding', 'complete');
+    localStorage.setItem('aitrader_persona', JSON.stringify(answers));
+    window.location.href = '/';
+}
+
+// Check if already completed
+if (localStorage.getItem('aitrader_onboarding') === 'complete') {
+    var persona = JSON.parse(localStorage.getItem('aitrader_persona') || '{}');
+    if (Object.keys(persona).length === 4) {
+        answers = persona;
+        // Show a "重新测试" banner
+    }
+}
+</script>
+{% endblock %}

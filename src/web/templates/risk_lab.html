@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="section-header">
+    <div>
+        <h1>⚠ 风险实验室</h1>
+        <p class="page-subtitle">如果历史重演，你的组合会怎样？——用六场真实危机做压力测试</p>
+    </div>
+    <button class="help-toggle" onclick="document.getElementById('helpBox').classList.toggle('show')">? 使用说明</button>
+</div>
+
+<div class="help-box" id="helpBox">
+    <p><strong>🧪 风险实验室能做什么？</strong></p>
+    <p>• 选择一场历史危机（2008 金融危机、2015 股灾、2020 疫情…），系统估算你当前持仓在类似冲击下会跌多少。</p>
+    <p>• <strong>这不是精确预测</strong>——每次危机都不同。但它能帮你建立"最坏情况"意识。</p>
+    <p>• 冲击系数基于历史数据近似：大盘股/小盘股/行业/债券/黄金各有不同的冲击幅度。</p>
+    <p style="margin-top:8px;color:var(--yellow)">⚠ 压力测试结果仅供教育目的，不代表对未来跌幅的预测。</p>
+</div>
+
+<!-- 当前持仓概览 -->
+<div class="card">
+    <h2>当前组合总览</h2>
+    <div class="stats" style="margin-bottom:0">
+        <div class="stat" style="background:var(--bg)">
+            <div class="value cyan">¥{{ "%.0f"|format(total_market_value) }}</div>
+            <div class="label">持仓总市值</div>
+            <div class="hint">{{ position_count }} 只标的</div>
+        </div>
+        <div class="stat" style="background:var(--bg)">
+            <div class="value">{{ position_count }}</div>
+            <div class="label">持仓数量</div>
+            <div class="hint">只（六人合并去重）</div>
+        </div>
+    </div>
+
+    {% if positions_data %}
+    <div class="table-wrap mt-12">
+        <table>
+            <thead><tr><th>代码</th><th>名称</th><th>持有</th><th>现价</th><th>市值</th><th>持有者</th></tr></thead>
+            <tbody>
+            {% for p in positions_data %}
+            <tr>
+                <td><span onclick="openStock('{{ p.symbol }}')" class="stock-link link">{{ p.symbol }}</span></td>
+                <td>{{ p.name }}</td>
+                <td>{{ p.shares }}股</td>
+                <td>¥{{ "%.2f"|format(p.current_price) }}</td>
+                <td>¥{{ "%.0f"|format(p.market_value) }}</td>
+                <td style="font-size:12px;color:var(--text2)">{{ p.holders|join(', ') }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+
+<!-- 场景选择 -->
+<h3 style="font-size:13px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin:24px 0 12px">选择危机场景进行压力测试</h3>
+<div class="grid-3">
+    {% for sc in scenarios %}
+    <div class="strategy-card" onclick="runScenario('{{ sc.id }}')" id="scenario-{{ sc.id }}">
+        <div class="sc-header">
+            <div class="sc-icon" style="background:rgba(248,113,113,.1);color:var(--red);font-size:28px">{{ sc.icon }}</div>
+            <div>
+                <div class="sc-name" style="font-size:14px">{{ sc.name }}</div>
+                <div class="sc-group">持续 {{ sc.duration }}</div>
+            </div>
+        </div>
+        <p style="font-size:12px;color:var(--text2);line-height:1.5;margin-top:8px">{{ sc.description[:80] }}...</p>
+        <button class="btn-ghost btn-xs mt-8" style="width:100%">▶ 运行压力测试</button>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- 结果区 -->
+<div class="card" id="resultCard" style="display:none;margin-top:20px;border-color:rgba(248,113,113,.2)">
+    <div class="flex-between mb-12">
+        <h2 id="resultTitle"></h2>
+        <button class="btn-xs btn-ghost" onclick="document.getElementById('resultCard').style.display='none'">收起</button>
+    </div>
+    <div class="stats" id="resultStats"></div>
+    <div class="table-wrap"><table id="resultTable"></table></div>
+    <div id="resultLessons" class="tip-card mt-12" style="margin-bottom:0"></div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function runScenario(scenarioId) {
+    // 高亮选中
+    document.querySelectorAll('.strategy-card').forEach(function(c) { c.style.borderColor = ''; });
+    var card = document.getElementById('scenario-' + scenarioId);
+    if (card) card.style.borderColor = 'var(--red)';
+
+    // Loading
+    var resultCard = document.getElementById('resultCard');
+    resultCard.style.display = 'block';
+    document.getElementById('resultTitle').innerHTML = '⏳ 模拟中...';
+    document.getElementById('resultStats').innerHTML = '';
+    document.getElementById('resultTable').innerHTML = '';
+    document.getElementById('resultLessons').innerHTML = '';
+
+    try {
+        var resp = await fetch('/api/risk-lab/simulate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({scenario_id: scenarioId})
+        });
+        var r = await resp.json();
+        if (!r.ok) { alert(r.error); return; }
+        var d = r.result;
+
+        document.getElementById('resultTitle').innerHTML =
+            d.scenario_icon + ' ' + d.scenario_name + ' <span class="badge badge-sell">' + d.duration + '</span>';
+
+        // Stats
+        var lossCls = d.loss_pct > 20 ? 'red' : d.loss_pct > 10 ? 'yellow' : 'green';
+        document.getElementById('resultStats').innerHTML =
+            '<div class="stat"><div class="value cyan">¥' + d.total_before.toFixed(0) + '</div><div class="label">冲击前市值</div></div>' +
+            '<div class="stat"><div class="value red">¥' + d.total_after.toFixed(0) + '</div><div class="label">冲击后市值</div></div>' +
+            '<div class="stat"><div class="value ' + lossCls + '">-¥' + d.total_loss.toFixed(0) + '</div><div class="label">预估亏损</div></div>' +
+            '<div class="stat"><div class="value ' + lossCls + '">-' + d.loss_pct.toFixed(1) + '%</div><div class="label">亏损比例</div></div>';
+
+        // Table
+        var tableHtml = '<thead><tr><th>股票</th><th>持有</th><th>冲击前</th><th>冲击后</th><th>亏损</th><th>幅度</th><th>影响</th></tr></thead><tbody>';
+        for (var i = 0; i < d.breakdown.length; i++) {
+            var b = d.breakdown[i];
+            var impactCls = b.impact_type === '重创' || b.impact_type === '严重' ? 'red' :
+                            b.impact_type === '中度' ? 'yellow' :
+                            b.impact_type === '逆势上涨' || b.impact_type === '抗跌' ? 'green' : '';
+            tableHtml += '<tr>' +
+                '<td><span onclick="openStock(\'' + b.symbol + '\')" class="stock-link link">' + b.name + '</span></td>' +
+                '<td>' + b.shares + '股</td>' +
+                '<td>¥' + b.before.toFixed(0) + '</td>' +
+                '<td>¥' + b.after.toFixed(0) + '</td>' +
+                '<td class="red">-¥' + b.loss.toFixed(0) + '</td>' +
+                '<td class="red">-' + b.loss_pct + '%</td>' +
+                '<td class="' + impactCls + '"><strong>' + b.impact_type + '</strong></td>' +
+            '</tr>';
+        }
+        tableHtml += '</tbody>';
+        document.getElementById('resultTable').innerHTML = tableHtml;
+
+        // Lessons
+        if (d.lessons && d.lessons.length) {
+            var lessonsHtml = '<strong>📖 历史教训：</strong><br>' +
+                d.lessons.map(function(l) { return '• ' + l; }).join('<br>');
+            document.getElementById('resultLessons').innerHTML = lessonsHtml;
+        }
+
+    } catch (e) {
+        document.getElementById('resultTitle').innerHTML = '<span class="red">模拟失败: ' + e.message + '</span>';
+    }
+}
+</script>
+{% endblock %}

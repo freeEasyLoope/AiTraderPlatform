@@ -1,0 +1,8 @@
+# 开发/测试依赖：pip install -r requirements-dev.txt
+-r requirements.txt
+
+pytest>=8.0.0
+pytest-mock>=3.12.0
+
+# 回测指标（当前源码未 import，按需启用）
+scipy>=1.11.0

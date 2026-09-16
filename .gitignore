@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# 数据
+data/*.db
+data/*.db-journal
+
+# 日志
+logs/*.log
+logs/*
+!logs/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 环境
+.env
+.env.local

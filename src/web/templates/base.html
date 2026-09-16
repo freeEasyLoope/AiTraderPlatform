@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AITrader · A股模拟投资</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        /* Page-specific augmentations — keep minimal */
+        .page-subtitle { font-size:12px; color:var(--text3); margin-top:2px; }
+    </style>
+</head>
+<body>
+    <nav aria-label="主导航">
+        <span class="logo">◆ AITrader</span>
+
+        <div class="nav-group">
+            <a href="/" class="{{ 'active' if request.url.path == '/' else '' }}" aria-label="总览仪表盘">
+                <span class="nav-icon">⊞</span> 总览
+            </a>
+            <a href="/strategies" class="{{ 'active' if request.url.path == '/strategies' else '' }}" aria-label="策略实验室">
+                <span class="nav-icon">◈</span> 策略
+            </a>
+            <a href="/signals" class="{{ 'active' if request.url.path == '/signals' else '' }}" aria-label="信号简报">
+                <span class="nav-icon">📡</span> 信号
+            </a>
+            <a href="/recommendations" class="{{ 'active' if request.url.path == '/recommendations' else '' }}" aria-label="自选分析">
+                <span class="nav-icon">◎</span> 自选
+            </a>
+        </div>
+
+        <span class="nav-divider"></span>
+
+        <div class="nav-group">
+            <a href="/risk-lab" class="{{ 'active' if request.url.path == '/risk-lab' else '' }}" aria-label="风险实验室">
+                <span class="nav-icon">⚠</span> 风控
+            </a>
+            <a href="/challenge" class="{{ 'active' if request.url.path == '/challenge' else '' }}" aria-label="模拟挑战">
+                <span class="nav-icon">🏆</span> 挑战
+            </a>
+            <a href="/screening" class="{{ 'active' if request.url.path == '/screening' else '' }}" aria-label="选股漏斗">
+                <span class="nav-icon">⧩</span> 漏斗
+            </a>
+            <a href="/reports" class="{{ 'active' if request.url.path == '/reports' else '' }}" aria-label="交易日志与周报">
+                <span class="nav-icon">▤</span> 日志
+            </a>
+            <a href="/control" class="{{ 'active' if request.url.path == '/control' else '' }}" aria-label="策略控制台">
+                <span class="nav-icon">⚙</span> 控制
+            </a>
+        </div>
+
+        <span id="dsStatus" title="数据源状态检测中...">◌ 检测中</span>
+    </nav>
+
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- 股票详情弹窗 -->
+    <div class="modal-overlay" id="stockModal" onclick="if(event.target===this)closeModal()">
+        <div class="modal" style="position:relative">
+            <button class="close" onclick="closeModal()" aria-label="关闭">&times;</button>
+            <h2 id="modalTitle"></h2>
+            <div class="stock-stats" id="modalStats"></div>
+            <div style="display:flex;gap:16px;flex-wrap:wrap">
+                <div style="flex:1;min-width:200px">
+                    <strong style="font-size:13px;color:var(--text2)">持有者</strong>
+                    <div id="modalHolders" style="margin-top:8px;font-size:13px"></div>
+                </div>
+                <div style="flex:1;min-width:160px">
+                    <strong style="font-size:13px;color:var(--text2)">估值指标</strong>
+                    <div style="font-size:12px;color:var(--text3);margin-top:8px;line-height:1.8">
+                        <span id="modalPE"></span><br><span id="modalPB"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% block scripts %}{% endblock %}
+
+    <!-- 确认对话框 -->
+    <div class="confirm-overlay" id="confirmDialog">
+        <div class="confirm-box">
+            <h3 id="confirmTitle"></h3>
+            <p id="confirmMsg"></p>
+            <div class="btn-row">
+                <button class="btn-ghost" onclick="closeConfirm()">取消</button>
+                <button id="confirmBtn" onclick="execConfirm()">确认</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // ── Confirm Dialog ──
+    let _confirmCallback = null;
+    function showConfirm(title, msg, callback) {
+        document.getElementById('confirmTitle').textContent = title;
+        document.getElementById('confirmMsg').textContent = msg;
+        _confirmCallback = callback;
+        document.getElementById('confirmDialog').classList.add('show');
+        document.getElementById('confirmBtn').focus();
+    }
+    function closeConfirm() {
+        document.getElementById('confirmDialog').classList.remove('show');
+        _confirmCallback = null;
+    }
+    function execConfirm() {
+        if (_confirmCallback) { _confirmCallback(); _confirmCallback = null; }
+        document.getElementById('confirmDialog').classList.remove('show');
+    }
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') { closeConfirm(); closeModal(); }
+    });
+
+    // ── Button Loading ──
+    function setLoading(btn, loading, label) {
+        if (loading) {
+            btn._origText = btn.textContent;
+            btn.disabled = true;
+            btn.classList.add('loading');
+            btn.textContent = label || '处理中...';
+        } else {
+            btn.disabled = false;
+            btn.classList.remove('loading');
+            btn.textContent = btn._origText || btn.textContent;
+        }
+    }
+
+    // ── Stock Modal ──
+    async function openStock(symbol) {
+        const overlay = document.getElementById('stockModal');
+        document.getElementById('modalTitle').textContent = symbol + ' 加载中...';
+        document.getElementById('modalStats').innerHTML = '';
+        document.getElementById('modalHolders').innerHTML = '';
+        document.getElementById('modalPE').textContent = '';
+        document.getElementById('modalPB').textContent = '';
+        overlay.classList.add('show');
+        try {
+            const resp = await fetch('/api/stock/' + symbol);
+            const d = await resp.json();
+            document.getElementById('modalTitle').innerHTML =
+                d.name + ' <span style="color:var(--text3);font-size:13px;font-weight:400">' + d.symbol + '</span>';
+            const p = d.price;
+            const stats = document.getElementById('modalStats');
+            if (p) {
+                const cls = p.change_pct >= 0 ? 'green' : 'red';
+                const arrow = p.change_pct >= 0 ? '↑' : '↓';
+                stats.innerHTML =
+                    '<div class="stock-stat"><div class="v ' + cls + '">¥' + p.close.toFixed(2) + '</div><div class="l">最新价 ' + arrow + (p.change_pct >= 0 ? '+' : '') + (p.change_pct * 100).toFixed(2) + '%</div></div>' +
+                    '<div class="stock-stat"><div class="v">¥' + p.high.toFixed(2) + '</div><div class="l">最高</div></div>' +
+                    '<div class="stock-stat"><div class="v">¥' + p.low.toFixed(2) + '</div><div class="l">最低</div></div>';
+            } else {
+                stats.innerHTML = '<div class="stock-stat" style="grid-column:1/-1"><div class="l">实时行情暂不可用</div></div>';
+            }
+            const h = document.getElementById('modalHolders');
+            if (d.holders && d.holders.length > 0) {
+                h.innerHTML = d.holders.map(function(h) {
+                    return '<div style="padding:5px 0;border-bottom:1px solid rgba(30,45,69,.3)"><a href="/trader/' + h.trader_id + '" style="color:var(--accent)">' + h.trader_name + '</a> <span style="color:var(--text3)">' + h.shares + '股 @¥' + h.cost.toFixed(2) + '</span></div>';
+                }).join('');
+            } else {
+                h.innerHTML = '<span style="color:var(--text3)">无操盘手持仓该股</span>';
+            }
+
+            const pel = document.getElementById('modalPE');
+            const pbl = document.getElementById('modalPB');
+            if (d.pe) {
+                var peLevel = d.pe < 15 ? '<span style="color:var(--green)">偏低</span>' :
+                              d.pe > 30 ? '<span style="color:var(--red)">偏高</span>' :
+                              '<span style="color:var(--yellow)">适中</span>';
+                pel.innerHTML = '<strong>PE:</strong> ' + d.pe.toFixed(1) + ' ' + peLevel;
+            } else {
+                pel.innerHTML = '<strong>PE:</strong> 暂无数据';
+            }
+            if (d.pb) {
+                var pbLevel = d.pb < 1 ? '<span style="color:var(--green)">破净</span>' :
+                              d.pb < 3 ? '<span style="color:var(--yellow)">合理</span>' :
+                              '<span style="color:var(--red)">偏高</span>';
+                pbl.innerHTML = '<strong>PB:</strong> ' + d.pb.toFixed(2) + ' ' + pbLevel;
+            } else {
+                pbl.innerHTML = '<strong>PB:</strong> 暂无数据';
+            }
+        } catch (e) {
+            document.getElementById('modalTitle').textContent = '加载失败';
+        }
+    }
+    function closeModal() {
+        document.getElementById('stockModal').classList.remove('show');
+    }
+
+    // ── Reason Translator ──
+    function translateReason(raw) {
+        if (!raw) return '';
+        var t = raw
+            .replace(/PE=([\d.]+)/g, '市盈率$1倍')
+            .replace(/PB=([\d.]+)/g, '市净率$1倍')
+            .replace(/RSI=([\d.]+)/g, '超买超卖指标$1')
+            .replace(/MA5\(([\d.]+).*MA20\(([\d.]+)/g, '5日均价$1上穿20日均价$2(金叉买入)')
+            .replace(/金叉放量/g, '金叉+成交量放大，上涨趋势确立')
+            .replace(/死叉/g, '死叉，下跌趋势确立')
+            .replace(/低估值/g, '股价低于行业平均，被低估')
+            .replace(/止盈:/g, '达到止盈目标:')
+            .replace(/止损:/g, '达到止损线:')
+            .replace(/超卖反弹/g, '短期超跌，预计反弹')
+            .replace(/再平衡/g, '调整仓位到目标比例');
+        return t;
+    }
+
+    // ── Data Source Health Check ──
+    (function checkHealth() {
+        var el = document.getElementById('dsStatus');
+        fetch('/api/health').then(function(r) { return r.json(); }).then(function(h) {
+            var parts = [];
+            parts.push(h.sina ? '🟢 行情' : '🔴 行情');
+            parts.push(h.baostock ? '🟢 K线' : '🔴 K线');
+            parts.push(h.tushare ? '🟢 财务' : '⚪ 财务');
+            el.textContent = parts.join(' ');
+            el.title = '数据源: ' + parts.join(', ');
+        }).catch(function() {
+            el.textContent = '⚠ 离线';
+        });
+    })();
+    </script>
+</body>
+</html>

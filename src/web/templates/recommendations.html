@@ -1,0 +1,328 @@
+{% extends "base.html" %}
+{% block content %}
+
+<!-- ═══════════════════════════════════════════════════════════════
+     自选池分析 — 估值温度计 + 操盘手建议 + AI 深度分析
+     ═══════════════════════════════════════════════════════════════ -->
+
+<div class="section-header">
+    <div>
+        <h1>◎ 自选池分析</h1>
+        <p class="page-subtitle">{{ now }} · {{ symbols|length }} 只标的 · 6 位操盘手联合分析</p>
+    </div>
+    <div class="btn-group">
+        <button class="help-toggle" onclick="document.getElementById('helpBox').classList.toggle('show')">? 说明</button>
+        <button onclick="document.getElementById('addModal').classList.add('show')" class="btn-sm">+ 添加标的</button>
+    </div>
+</div>
+
+<div class="help-box" id="helpBox">
+    <p><strong>📋 自选池分析能做什么？</strong></p>
+    <p>• <strong>实时行情</strong>：你关注的所有股票/ETF 的最新价和涨跌幅。</p>
+    <p>• <strong>估值温度计</strong>：🌡 当前 PE/PB 在历史 3 年中处于什么位置——80% 分位 = 比过去 80% 的时间都贵。</p>
+    <p>• <strong>六人建议</strong>：六位操盘手各自基于自己的策略，对你的自选池给出买入/卖出建议。</p>
+    <p>• <strong>AI 深度分析</strong>：单独点击某只股票的 AI 分析，用自然语言告诉你它值不值得关注。</p>
+</div>
+
+<!-- 添加标的弹窗 -->
+<div class="modal-overlay" id="addModal" onclick="if(event.target===this)this.classList.remove('show')">
+    <div class="modal" style="position:relative;max-width:420px">
+        <button class="close" onclick="document.getElementById('addModal').classList.remove('show')">&times;</button>
+        <h2>添加自选标的</h2>
+        <div class="flex-col gap-12">
+            <input id="newSymbol" placeholder="股票/基金代码 (如 600519)" style="padding:10px 14px;font-size:14px">
+            <input id="newName" placeholder="名称 (如 贵州茅台)" style="padding:10px 14px;font-size:14px">
+            <select id="newType" style="padding:10px 14px;font-size:14px">
+                <option value="stocks">股票</option>
+                <option value="funds">基金/ETF</option>
+            </select>
+            <button onclick="addStock()">确认添加</button>
+            <span id="addMsg" class="text-muted"></span>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     自选池概览
+     ═══════════════════════════════════════════════ -->
+<div class="card" style="padding:14px 20px;margin-bottom:20px">
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+        <strong style="font-size:13px;color:var(--text2)">当前自选：</strong>
+        {% for s, n in names.items() %}
+        <span style="background:var(--bg);border:1px solid var(--border);padding:4px 10px;border-radius:6px;font-size:13px;display:inline-flex;align-items:center;gap:6px">
+            <span onclick="openStock('{{ s }}')" class="stock-link" style="color:var(--accent);font-weight:600">{{ n }}</span>
+            <span class="text-muted">{{ s }}</span>
+            <span onclick="removeStock('{{ s }}','{{ 'funds' if s in funds else 'stocks' }}')"
+                  style="cursor:pointer;color:var(--red);font-size:16px;line-height:1" title="删除">×</span>
+        </span>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     行情网格 + 估值温度计
+     ═══════════════════════════════════════════════ -->
+{% if market %}
+<h3 style="font-size:13px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">📊 行情概览 & 估值温度计</h3>
+<div class="grid-2" style="margin-bottom:24px">
+    {% for s in symbols %}
+    {% set snap = market.get(s, None) %}
+    {% set thermo = thermo_data.get(s, {}) %}
+    <div class="card" style="padding:18px;margin-bottom:0">
+        <div class="flex-between mb-8">
+            <div>
+                <strong style="font-size:15px;cursor:pointer" onclick="openStock('{{ s }}')" class="link">{{ names.get(s, s) }}</strong>
+                <span class="text-muted" style="margin-left:6px">{{ s }}</span>
+            </div>
+            <div class="btn-group">
+                <button onclick="analyzeStock('{{ s }}')" class="btn-xs" style="background:var(--accent2)">🤖 AI 分析</button>
+                <button onclick="runStress('{{ s }}')" class="btn-xs btn-ghost">📉 压力测试</button>
+            </div>
+        </div>
+
+        {% if snap %}
+        <div class="flex-between">
+            <div>
+                <span style="font-size:22px;font-weight:800;color:{{ 'var(--green)' if snap.change_pct >= 0 else 'var(--red)' }}">¥{{ "%.2f"|format(snap.close) }}</span>
+                <span class="{{ 'green' if snap.change_pct >= 0 else 'red' }}" style="font-size:13px;font-weight:600;margin-left:4px">
+                    {{ '↑' if snap.change_pct >= 0 else '↓' }}{{ "%+.2f"|format(snap.change_pct * 100) }}%
+                </span>
+            </div>
+            <div style="display:flex;gap:16px;font-size:12px">
+                {% if snap.pe %}
+                <span title="市盈率">PE <strong>{{ "%.1f"|format(snap.pe) }}</strong>
+                    <span class="{{ 'green' if snap.pe < 15 else 'red' if snap.pe > 30 else 'yellow' }}">
+                        {{ '偏低' if snap.pe < 15 else '偏高' if snap.pe > 30 else '适中' }}
+                    </span>
+                </span>
+                {% endif %}
+                {% if snap.pb %}
+                <span title="市净率">PB <strong>{{ "%.2f"|format(snap.pb) }}</strong></span>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- 估值温度计 -->
+        {% if thermo.pe_current %}
+        <div class="thermo mt-12">
+            <div class="thermo-label">
+                <span>PE 估值温度</span>
+                <span>
+                    当前 {{ thermo.pe_current }}
+                    {% if thermo.pe_percentile is not none %}
+                    · 比 {{ thermo.days }} 天中 <strong>{{ thermo.pe_percentile }}%</strong> 的时间贵
+                    {% endif %}
+                </span>
+            </div>
+            <div class="thermo-track">
+                <div class="thermo-needle" style="left:{{ thermo.pe_percentile or 50 }}%"></div>
+            </div>
+            <div class="thermo-zone-labels">
+                <span style="color:var(--green)">低估区</span>
+                <span style="color:var(--yellow)">合理区</span>
+                <span style="color:var(--red)">高估区</span>
+            </div>
+        </div>
+        {% endif %}
+
+        {% else %}
+        <p class="text-muted">行情暂不可用</p>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- ═══════════════════════════════════════════════
+     操盘手建议
+     ═══════════════════════════════════════════════ -->
+{% if recs %}
+<h3 style="font-size:13px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">
+    🎯 六位操盘手建议
+    <span class="text-muted" style="text-transform:none;font-weight:400">
+        · {{ recs|selectattr('action','equalto','买入')|list|length }} 买入 · {{ recs|selectattr('action','equalto','卖出')|list|length }} 卖出
+    </span>
+</h3>
+
+{% for r in recs %}
+<div class="card" style="padding:16px 20px;margin-bottom:10px">
+    <div class="flex-between">
+        <div style="display:flex;align-items:center;gap:12px">
+            <strong style="font-size:14px;cursor:pointer" onclick="openStock('{{ r.symbol }}')" class="link">{{ r.name }}</strong>
+            <span class="text-muted">{{ r.symbol }}</span>
+            {% if r.current_price > 0 %}
+            <span style="font-weight:600;font-size:14px">¥{{ "%.2f"|format(r.current_price) }}</span>
+            {% endif %}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+            <span class="badge {{ 'badge-buy' if r.action == '买入' else 'badge-sell' }}">{{ r.action }}</span>
+            <span class="badge badge-fill">{{ r.trader }}</span>
+        </div>
+    </div>
+    <div style="margin-top:8px;font-size:13px;color:var(--text2);line-height:1.6">
+        <strong>理由：</strong>{{ r.reason }}
+    </div>
+</div>
+{% endfor %}
+
+{% else %}
+<div class="card">
+    <div class="empty-state">
+        <div class="empty-icon">📭</div>
+        <p>当前行情下暂无操盘手建议</p>
+        <p class="text-muted">所有策略都没有发出买卖信号</p>
+    </div>
+</div>
+{% endif %}
+
+<!-- ═══════════════════════════════════════════════
+     MODALS
+     ═══════════════════════════════════════════════ -->
+<div class="modal-overlay" id="stressModal" onclick="if(event.target===this)this.classList.remove('show')">
+    <div class="modal wide" style="position:relative;max-height:85vh">
+        <button class="close" onclick="document.getElementById('stressModal').classList.remove('show')">&times;</button>
+        <h2 id="stressTitle"></h2>
+        <div style="font-size:13px;color:var(--text2);line-height:1.8">
+            <div id="stressLoading" style="display:none;text-align:center;padding:20px" class="text-muted">加载中...</div>
+            <div id="stressBody" style="display:none">
+                <div class="stats" id="stressStats"></div>
+                <div class="grid-2" id="stressGrid"></div>
+                <div id="stressEvents" style="margin-top:12px"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="analysisModal" onclick="if(event.target===this)this.classList.remove('show')">
+    <div class="modal wide" style="position:relative">
+        <button class="close" onclick="document.getElementById('analysisModal').classList.remove('show')">&times;</button>
+        <h2 id="analysisTitle"></h2>
+        <div id="analysisContent" style="font-size:14px;color:var(--text2);line-height:1.8">加载中...</div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Stress Test ──
+async function runStress(symbol) {
+    var m = document.getElementById('stressModal'),
+        t = document.getElementById('stressTitle');
+    m.classList.add('show');
+    t.textContent = '压力测试: ' + symbol;
+    document.getElementById('stressLoading').style.display = 'block';
+    document.getElementById('stressBody').style.display = 'none';
+    try {
+        var resp = await fetch('/api/stress/' + symbol);
+        var d = await resp.json();
+        t.textContent = d.name + ' (' + d.symbol + ') 压力测试';
+
+        var peTxt = d.valuation.pe ? 'PE=' + d.valuation.pe + ' (' + d.valuation.pe_level + ')' : 'PE: 无数据';
+        var sup = d.support.position !== '数据不足' ? '支撑 ¥' + d.support.support2 + ' (-' + d.support.to_support_pct + '%)' : d.support.position;
+        document.getElementById('stressStats').innerHTML =
+            '<div class="stat"><div class="value cyan">¥' + (d.valuation.current_price || 0).toFixed(2) + '</div><div class="label">当前价</div></div>' +
+            '<div class="stat"><div class="value">' + peTxt + '</div><div class="label">估值</div></div>' +
+            '<div class="stat"><div class="value">' + (d.volume.signal || '?') + '</div><div class="label">成交量</div></div>' +
+            '<div class="stat"><div class="value">' + (d.divergence.signal || '?') + '</div><div class="label">资金信号</div></div>' +
+            '<div class="stat"><div class="value">' + sup + '</div><div class="label">支撑位</div></div>';
+
+        var grid = '<div class="card"><h2>支撑/压力位</h2>';
+        if (d.support.position !== '数据不足') {
+            grid +=
+                '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><span style="color:var(--red)">阻力2</span><strong>¥' + d.support.resist2 + '</strong><span class="text-muted">60日最高</span></div>' +
+                '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><span style="color:var(--yellow)">阻力1</span><strong>¥' + d.support.resist1 + '</strong><span class="text-muted">20日均线</span></div>' +
+                '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:2px solid var(--accent)"><span style="color:var(--accent)">当前价</span><strong>¥' + d.support.current + '</strong></div>' +
+                '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><span style="color:var(--green)">支撑1</span><strong>¥' + d.support.support1 + '</strong><span class="text-muted">60日均线</span></div>' +
+                '<div style="display:flex;justify-content:space-between;padding:8px 0"><span style="color:var(--green)">支撑2</span><strong>¥' + d.support.support2 + '</strong><span class="text-muted">60日最低</span></div>';
+        } else {
+            grid += '<p class="text-muted">需要60天以上历史K线数据</p>';
+        }
+        grid += '</div><div class="card"><h2>成交量 & 资金</h2>' +
+            '<p>20日均量: ' + (d.volume.avg_20d || '?') + '万手 | 近5日: ' + (d.volume.recent_5d || '?') + '万手 (' + (d.volume.signal || '?') + ')</p>' +
+            '<p style="margin-top:8px">价格变化: ' + d.divergence.price_change_5d + ' | 量变化: ' + d.divergence.volume_change_5d + '</p>' +
+            '<p style="margin-top:4px;color:var(--yellow)">' + d.divergence.signal + '</p></div>';
+        document.getElementById('stressGrid').innerHTML = grid;
+
+        var ev = '<div class="card"><h2>近期事件</h2>';
+        if (d.events && d.events.length) {
+            ev += d.events.map(function(e) {
+                return '<div style="padding:6px 0;border-bottom:1px solid var(--border)"><strong>' + e.type + '</strong> ' + e.date + ': ' + e.detail + '</div>';
+            }).join('');
+        } else {
+            ev += '<p class="text-muted">暂无分红/财报事件记录</p>';
+        }
+        ev += '</div>';
+        document.getElementById('stressEvents').innerHTML = ev;
+
+        document.getElementById('stressLoading').style.display = 'none';
+        document.getElementById('stressBody').style.display = 'block';
+    } catch (e) {
+        document.getElementById('stressLoading').innerHTML = '<span class="red">加载失败: ' + e + '</span>';
+    }
+}
+
+// ── AI Analysis ──
+async function analyzeStock(symbol) {
+    var m = document.getElementById('analysisModal'),
+        t = document.getElementById('analysisTitle'),
+        c = document.getElementById('analysisContent');
+    m.classList.add('show');
+    t.textContent = '分析中...';
+    c.innerHTML = '<span class="text-muted">🤖 AI 正在深度分析 ' + symbol + '，请稍候...</span>';
+    try {
+        var resp = await fetch('/api/recommendations/analyze/' + symbol);
+        var d = await resp.json();
+        t.innerHTML = d.summary || symbol;
+
+        var riskBadge = '';
+        if (d.risk_level === '低') riskBadge = '<span class="badge badge-buy">低风险</span>';
+        else if (d.risk_level === '高') riskBadge = '<span class="badge badge-sell">高风险</span>';
+        else riskBadge = '<span class="badge badge-rej">中风险</span>';
+
+        c.innerHTML =
+            (d.novice_advice ? '<div class="card card-highlight" style="margin-bottom:14px"><h2>📖 新手解读</h2><p style="font-size:14px;line-height:1.8">' + d.novice_advice + '</p></div>' : '') +
+            '<div class="grid-2">' +
+                (d.buy_plan ? '<div class="card" style="margin-bottom:0"><h2>🟢 买入计划</h2><p style="font-size:13px;line-height:1.7">' + d.buy_plan + '</p></div>' : '') +
+                (d.sell_plan ? '<div class="card" style="margin-bottom:0"><h2>🔴 卖出计划</h2><p style="font-size:13px;line-height:1.7">' + d.sell_plan + '</p></div>' : '') +
+            '</div>' +
+            '<div class="card mt-12" style="margin-bottom:0">' +
+                '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px">' +
+                    (d.target_price ? '<span><strong>目标价位：</strong>' + d.target_price + '</span>' : '') +
+                    '<span><strong>风险等级：</strong>' + riskBadge + '</span>' +
+                    (d.holding_period ? '<span><strong>建议持有：</strong>' + d.holding_period + '</span>' : '') +
+                '</div>' +
+            '</div>';
+    } catch (e) {
+        c.innerHTML = '<span class="red">分析失败: ' + e.message + '</span>';
+    }
+}
+
+// ── Add / Remove ──
+async function addStock() {
+    var s = document.getElementById('newSymbol').value.trim(),
+        n = document.getElementById('newName').value.trim(),
+        t = document.getElementById('newType').value;
+    if (!s || !n) return;
+    var resp = await fetch('/api/watchlist/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol: s, name: n, type: t })
+    });
+    var j = await resp.json();
+    document.getElementById('addMsg').textContent = j.ok ? '已添加，刷新页面生效' : '失败: ' + (j.error || '');
+    if (j.ok) setTimeout(function() { location.reload(); }, 800);
+}
+
+async function removeStock(symbol, type) {
+    if (!confirm('确定删除 ' + symbol + '?')) return;
+    var resp = await fetch('/api/watchlist/remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol: symbol, type: type })
+    });
+    var j = await resp.json();
+    if (j.ok) location.reload();
+}
+</script>
+{% endblock %}

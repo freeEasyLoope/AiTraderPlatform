@@ -1,0 +1,36 @@
+# 5步选股漏斗配置
+screening:
+  enabled: true  # 是否在模拟器中自动启用
+  active_steps: [1, 3, 5]  # 默认活跃步骤
+  max_candidates: 50  # 最终输出上限
+
+  # 排除类别（不送入漏斗）
+  exclude_categories: ["etf", "index"]
+
+step1_volume:
+  volume_window: 30  # 成交量观察窗口（天）
+  volume_amplify_min: 1.2  # 5日均量 > 30日均量 × 此值
+  pe_vs_industry_max: 1.0  # PE 必须 ≤ 行业中位数
+  exclude_st: true  # 排除 ST/*ST
+
+step2_financial:
+  net_profit_positive_3y: true  # 近三年净利润为正
+  roe_min: 0.08  # ROE > 8%
+  goodwill_ratio_max: 0.30  # 商誉/净资产 < 30%
+  ar_revenue_ratio_max: 0.50  # 应收账款/营收 < 50%
+  dual_high_flag: true  # 标记存贷双高
+
+step3_capital:
+  main_net_inflow_days: 10  # 主力资金观察天数
+  north_net_inflow_days: 10  # 北向资金观察天数
+  require_north: false  # 是否强制要求北向持仓
+
+step4_sector:
+  sector_top_n: 5  # 只取前 N 个强势行业
+  sector_lookback: 20  # 行业涨跌幅回看天数
+  policy_keywords: []  # 政策关键词列表（例如：["低空经济", "AI算力", "人形机器人"]）
+
+step5_risk:
+  max_drawdown_60d: 0.30  # 60日最大回撤 > 此值则淘汰
+  restricted_share_days: 30  # 未来 N 日内有解禁则淘汰
+  pe_extreme_multiple: 3.0  # PE > 行业PE × 此值视为极端高估

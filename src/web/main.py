@@ -1,0 +1,196 @@
+"""FastAPI 应用入口——挂载路由模块。"""
+
+from __future__ import annotations
+
+import logging
+import os
+import secrets
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
+
+from .routes.dashboard import router as dashboard_router
+from .routes.control import router as control_router
+from .routes.reports import router as reports_router
+from .routes.watchlist import router as watchlist_router
+from .routes.analysis import router as analysis_router
+from .routes.strategies import router as strategies_router
+from .routes.signal_briefing import router as signal_briefing_router
+from .routes.risk_lab import router as risk_lab_router
+from .routes.onboarding import router as onboarding_router
+from .routes.challenge import router as challenge_router
+from .routes.screening import router as screening_router
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """启动钩子：建表、播种操盘手，必要时在进程内启动调度器。
+
+    PocketBay 只跑一个 web 进程且不提供 cron，定时交易必须在应用内调度。
+    本地（未注入 POCKETBAY_DATA_DIR）默认不启动，避免与 run_daily.bat 重复下单。
+    """
+    from ..config import load_settings, load_traders
+    from ..engine.scheduler import TradingScheduler
+    from ..runtime import is_managed_env, setup_logging
+    from .deps import repo
+
+    settings = load_settings()
+    setup_logging(settings.get("logging", {}).get("level", "INFO"))
+
+    # 部署包不含本地 SQLite，线上首启必须自建表并创建操盘手账户，否则首屏是空看板
+    repo.init_traders(load_traders())
+    logger.info("数据库就绪: %s", repo.engine.url)
+
+    scheduler = None
+    sched_cfg = settings.get("scheduler", {}) or {}
+    want_scheduler = (
+        os.environ.get("AITRADER_DISABLE_SCHEDULER") != "1"
+        and (bool(sched_cfg.get("run_in_web")) or is_managed_env())
+    )
+    if want_scheduler:
+        from ..analysis.llm_reporter import LLMReporter
+        from ..engine.factory import build_simulator
+
+        llm_cfg = settings.get("llm", {}) or {}
+        reporter = LLMReporter(
+            repo,
+            model=llm_cfg.get("model", "claude-sonnet-4-6"),
+            max_tokens=llm_cfg.get("max_tokens", 4096),
+            temperature=llm_cfg.get("temperature", 0.3),
+        )
+        scheduler = TradingScheduler(build_simulator(repo), reporter=reporter)
+        scheduler.start(
+            trading_time=sched_cfg.get("trading_time", "21:00"),
+            report_time=sched_cfg.get("weekly_report_time", "21:30"),
+            report_day=sched_cfg.get("weekly_report_day", "fri"),
+        )
+        logger.info("进程内调度已启用（时区 %s）", os.environ.get("TZ", "?"))
+    else:
+        logger.info("进程内调度未启用（本地模式，可用 cli.py schedule 单独跑）")
+
+    app.state.scheduler = scheduler
+
+    yield
+
+    if scheduler is not None:
+        scheduler.stop()
+
+
+app = FastAPI(title="AITrader Dashboard", lifespan=lifespan)
+
+# ── 可选的简单密码保护（生产环境） ──
+_AUTH_USERNAME = os.environ.get("AITRADER_USERNAME", "")
+_AUTH_PASSWORD = os.environ.get("AITRADER_PASSWORD", "")
+
+
+class SimpleAuthMiddleware(BaseHTTPMiddleware):
+    """简单的 Basic Auth 中间件。仅在设置了 AITRADER_USERNAME 时生效。"""
+
+    async def dispatch(self, request: Request, call_next):
+        if not _AUTH_USERNAME:
+            return await call_next(request)
+        # 跳过 API 和健康检查
+        if request.url.path.startswith("/api/") or request.url.path.startswith("/static/"):
+            return await call_next(request)
+
+        auth = request.headers.get("Authorization", "")
+        expected = f"Basic {_AUTH_USERNAME}:{_AUTH_PASSWORD}"
+        import base64
+        expected_b64 = base64.b64encode(f"{_AUTH_USERNAME}:{_AUTH_PASSWORD}".encode()).decode()
+
+        if not auth.startswith("Basic ") or auth.split(" ", 1)[1] != expected_b64:
+            return JSONResponse(
+                {"detail": "Unauthorized"},
+                status_code=401,
+                headers={"WWW-Authenticate": "Basic realm=\"AITrader\""},
+            )
+
+        return await call_next(request)
+
+
+if _AUTH_USERNAME:
+    app.add_middleware(SimpleAuthMiddleware)
+
+# 静态文件
+static_dir = Path(__file__).parent / "static"
+static_dir.mkdir(exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+# 挂载路由
+app.include_router(dashboard_router)
+app.include_router(strategies_router)
+app.include_router(signal_briefing_router)
+app.include_router(risk_lab_router)
+app.include_router(onboarding_router)
+app.include_router(challenge_router)
+app.include_router(screening_router)
+app.include_router(control_router)
+app.include_router(reports_router)
+app.include_router(watchlist_router)
+app.include_router(analysis_router)
+
+
+# 健康检查探针是阻塞网络调用（baostock 不可达时可达 80s+），
+# ① 用同步 def 让 FastAPI 丢进线程池，不冻结事件循环；
+# ② 加 5 分钟缓存，避免每次开页面都重探。
+_HEALTH_TTL_SECONDS = 300
+_health_cache: dict = {"ts": 0.0, "data": None}
+
+
+@app.get("/api/health")
+def api_health():
+    """数据源健康检查（带缓存）。"""
+    import os
+    import time as _time
+
+    now = _time.time()
+    cached = _health_cache["data"]
+    if cached is not None and now - _health_cache["ts"] < _HEALTH_TTL_SECONDS:
+        return cached
+
+    health = {"sina": False, "baostock": False, "tushare": False}
+    try:
+        from ..data.sina_client import SinaClient
+        snap = SinaClient().get_snapshot("600519")
+        health["sina"] = snap is not None and snap.close > 0
+    except Exception:
+        pass
+    try:
+        import baostock as bs
+        import io, sys
+        old, sys.stdout = sys.stdout, io.StringIO()
+        lg = bs.login()
+        sys.stdout = old
+        health["baostock"] = lg.error_code == "0"
+        if health["baostock"]:
+            sys.stdout = io.StringIO()
+            bs.logout()
+            sys.stdout = old
+    except Exception:
+        pass
+    try:
+        token = os.environ.get("TUSHARE_TOKEN", "")
+        if token:
+            import tushare as ts
+            ts.set_token(token)
+            health["tushare"] = True
+    except Exception:
+        pass
+
+    _health_cache["ts"] = now
+    _health_cache["data"] = health
+    return health
+
+
+@app.get("/api/news/{symbol}")
+def api_stock_news(symbol: str, days: int = 5):
+    """获取个股新闻/公告。"""
+    from ..data.news_client import get_stock_news
+    news = get_stock_news(symbol, days=days)
+    return {"ok": True, "news": news}

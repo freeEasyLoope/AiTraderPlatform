@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="section-header">
+    <div>
+        <h1>📡 每日信号简报</h1>
+        <p class="page-subtitle">{{ now }} · {{ symbol_count }} 只自选标的 · 6 位操盘手实时分析</p>
+    </div>
+    <div class="btn-group">
+        <button class="help-toggle" onclick="document.getElementById('helpBox').classList.toggle('show')">? 怎么看信号</button>
+        <a href="/recommendations" class="btn btn-ghost btn-sm">自选分析 →</a>
+    </div>
+</div>
+
+<div class="help-box" id="helpBox">
+    <p><strong>📡 信号简报是什么？</strong></p>
+    <p>• 每个交易日，六位操盘手对你的自选池运行各自策略，生成买卖信号。</p>
+    <p>• <strong>多个操盘手同时对一只股票发信号 → 置信度更高</strong>（不同策略从不同角度得出一致结论）。</p>
+    <p>• <strong>买入信号多 ≠ 马上涨</strong>——信号告诉你"策略认为现在是好时机"，但不保证。</p>
+    <p>• <strong>零信号也是信号</strong>——说明当前行情下所有策略都找不到合适机会，空仓可能是最好的操作。</p>
+    <p style="margin-top:8px;color:var(--yellow)">⚠ 信号仅供参考学习，不构成投资建议。</p>
+</div>
+
+<!-- 信号统计 -->
+<div class="stats">
+    <div class="stat">
+        <div class="value">{{ signals|length }}</div>
+        <div class="label">总信号数</div>
+        <div class="hint">今日触发</div>
+    </div>
+    <div class="stat">
+        <div class="value green">{{ buy_count }}</div>
+        <div class="label">买入信号</div>
+        <div class="hint">个</div>
+    </div>
+    <div class="stat">
+        <div class="value red">{{ sell_count }}</div>
+        <div class="label">卖出信号</div>
+        <div class="hint">个</div>
+    </div>
+    <div class="stat">
+        <div class="value">{{ by_stock|length }}</div>
+        <div class="label">涉及标的</div>
+        <div class="hint">只（共 {{ symbol_count }} 只自选）</div>
+    </div>
+</div>
+
+{% if not signals %}
+<div class="card">
+    <div class="empty-state">
+        <div class="empty-icon">🔇</div>
+        <p style="font-size:16px">今日无策略信号触发</p>
+        <p class="text-muted">
+            所有自选标的均未满足六位操盘手的交易条件。<br>
+            这不一定是坏事——在不确定的行情中，不操作往往比乱操作更好。
+        </p>
+    </div>
+</div>
+{% else %}
+
+<!-- 信号按股票分组 -->
+{% for sym, stock in by_stock.items() %}
+<div class="card card-highlight" style="margin-bottom:16px">
+    <div class="flex-between mb-12">
+        <div>
+            <strong style="font-size:16px;cursor:pointer" onclick="openStock('{{ sym }}')" class="link">
+                {{ stock.name }}
+            </strong>
+            <span class="text-muted" style="margin-left:6px">{{ sym }}</span>
+            <span style="font-size:14px;font-weight:700;margin-left:12px;color:{{ 'var(--green)' if stock.change_pct >= 0 else 'var(--red)' }}">
+                ¥{{ "%.2f"|format(stock.price) }}
+            </span>
+            <span class="{{ 'green' if stock.change_pct >= 0 else 'red' }}" style="font-size:12px;font-weight:600">
+                {{ '↑' if stock.change_pct >= 0 else '↓' }}{{ "%+.2f"|format(stock.change_pct * 100) }}%
+            </span>
+        </div>
+        <div>
+            {% if stock.pe %}<span class="tag">PE {{ "%.1f"|format(stock.pe) }}</span>{% endif %}
+            {% if stock.pb %}<span class="tag">PB {{ "%.2f"|format(stock.pb) }}</span>{% endif %}
+            <span class="badge badge-fill">{{ stock.signals|length }} 条信号</span>
+        </div>
+    </div>
+
+    {% for sig in stock.signals %}
+    <div style="padding:10px 14px;margin-bottom:6px;background:var(--bg);border-radius:var(--radius-sm);border-left:3px solid {{ 'var(--green)' if sig.action == '买入' else 'var(--red)' }}">
+        <div class="flex-between">
+            <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:18px">{{ sig.strategy_icon }}</span>
+                <strong style="font-size:13px">{{ sig.strategy_name }}</strong>
+                <span class="badge {{ 'badge-buy' if sig.action == '买入' else 'badge-sell' }}">{{ sig.action }}</span>
+                <span class="text-muted">{{ sig.shares }}股</span>
+            </div>
+            <button onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'"
+                    class="btn-xs btn-ghost" style="font-size:11px">策略逻辑</button>
+        </div>
+        <div style="font-size:12px;color:var(--text2);margin-top:4px">
+            <strong>理由：</strong>{{ sig.reason }}
+        </div>
+        <div style="display:none;margin-top:6px;font-size:11px;color:var(--text3);line-height:1.6;padding:8px;background:rgba(56,189,248,.03);border-radius:var(--radius-xs)">
+            <div><strong>策略哲学：</strong>{{ sig.philosophy }}</div>
+            {% if sig.action == '买入' %}
+            <div><strong>买入条件：</strong>{{ sig.buy_condition }}</div>
+            {% else %}
+            <div><strong>卖出条件：</strong>{{ sig.sell_condition }}</div>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endfor %}
+
+<!-- 简报文本 -->
+<div class="card" style="background:rgba(56,189,248,.02);border-color:rgba(56,189,248,.1)">
+    <h2>📝 自然语言简报</h2>
+    <div style="font-size:13px;color:var(--text);line-height:1.9;white-space:pre-wrap">{{ briefing_text }}</div>
+</div>
+
+{% endif %}
+
+{% endblock %}
