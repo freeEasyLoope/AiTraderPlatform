@@ -81,12 +81,32 @@
   - 应用侧只能"访问期间保活 + 让失败可见"（见 Web 层约定），平台休眠无法从应用侧消除。
 
 ## Web 层约定（托管平台交互）
+- **页面路由一律写全量路径，禁止「prefix + `get("/")`」产生的尾斜杠形态**。
+  那会让 `/xxx` 落到 Starlette 的 307，而应用在平台 https 网关后面、redirect 里的
+  绝对 URL 是**明文 http**（`X-Forwarded-Proto` 未必被转发）→ https iframe 内跟随
+  会被浏览器按混合内容拦掉，表现就是"点了没反应/进不去"（`/screening` 真实踩过）。
+  推论：**导航项目标一律不允许依赖 3xx**——整页刷新能掩盖它，fetch 局部加载不能。
+  回归测试见 `tests/test_web/test_partial_nav.py::test_nav_targets_do_not_redirect`。
+- **`/static/*` 的资源引用必须带内容指纹**（`/static/style.css?v={{ static_version() }}`，
+  见 `src/web/deps.py`）。因为 `/static/` 是 `max-age=14400`、HTML 是 `no-store`，
+  平台边缘节点会缓存静态文件 → 部署后出现「新页面 + 旧 CSS」，样式改了最长 4 小时不生效，
+  且因为 HTML 确实变了，很容易被误判成"改动没起作用"。改 `/static/` 下任何文件后，
+  都要确认引用处的指纹跟着变。
 - **动态响应一律 `Cache-Control: no-store`**（`web/main.py:DynamicNoStore`，纯 ASGI 中间件；用 `BaseHTTPMiddleware` 会缓冲响应体、与 `StaticFiles` 的 `FileResponse` 组合易出问题）。实时看板 HTML 被缓存会显示过时价格。`/static/*` 保持可缓存。
+
 - **`GET /api/ping` 是保活端点**，只证明进程还在、**不做任何外部探测**；`/api/health` 会真的探数据源（秒级），不可互相替代。前端在页面可见且有操作时每 2 分钟打一次，30 分钟无操作停止。
 - **站内跳转是「异步局部加载」，不是整页导航**（`base.html` `asyncNav` / `style.css` `#navProgress`+`#navLoading`）。
   - 交换边界：`#page-root`（内容，包住 `.container`）与 `#page-scripts`（页面脚本）**必须分开**——`screening.html` 的 `<script>` 写在 content 块里；且 `innerHTML` 插入的 `<script>` 不会执行，必须手动按块重放。
   - **页面脚本禁止出现行首（零缩进）`let`/`const`**：同一文档二次注入会抛 `Identifier 'x' has already been declared`，整个脚本不执行 → 复访该页功能静默失效。前端用 `deLexicalize()` 把行首 let/const 降级为 `var`（函数体内的块级作用域不动）；清单被 `tests/test_web/test_partial_nav.py` 冻结。
-  - 加载态三件套：顶部不确定进度条 + 内容淡化（旧内容保留不白屏）+ 分阶段文案（正在加载 → 正在计算行情数据 → 应用可能正在唤醒，带已等待秒数）。必须 `pointer-events:none`。
+  - 加载态三件套：顶部不确定进度条 + 内容淡化（旧内容保留不白屏）+ 分阶段文案（正在加载 → 正在计算行情数据 → 应用可能正在唤醒，带已等待秒数）。
+    **加载提示必须「默认隐藏、靠 `.on` 显示」**：`#navLoading` 由 JS 创建后长期复用，
+    `hideLoading()` 只移除 `.on`；若基态可见、又没有 `.on` 规则，遮罩会从第一次跳转起
+    **永久盖屏**（真事故）。基态要 `visibility:hidden` + `opacity:0` + `pointer-events:none`，
+    且**不要做成全屏深色模糊**——那会把"加载慢"放大成"网站挂了"。
+    契约由 `test_loading_indicator_is_hidden_until_on_class` 守住。
+  - 兜底整页导航也可能被环境拦住（网关策略 / `location.assign` 抛错）：探针**必须先挂再导航**，
+    4s 内文档没变就把加载提示转成可操作态（「重试 / 刷新整页」）并解除导航锁，
+    不许永远停在加载态。
   - 任何环节不符合预期（非 HTML 响应 / 缺边界 / 超时重试后仍失败）→ 回退整页导航，最坏不比原来差。**表单提交语义保持整页提交**，只补可见反馈。
   - 悬停预取必须**串行 + 防抖**（单进程容器，并发预取会压住重计算页面）。pushState 后要**自己更新导航高亮**（服务端算的 `active` class 不会重算）。
   - 复用：改这类页面时，新页面只要 `{% extends "base.html" %}` 就自动获得全部能力。
@@ -97,7 +117,13 @@
   **不能直接交换 CSS 变量值**，只能逐个翻转"涨跌三元表达式"并收口到单一 helper。
 
 ## 验证线上页面时的坑
+- **断言 DOM 类名 ≠ 验证界面状态**。曾出现「E2E 31/31 全绿但用户看到遮罩永不消失」：
+  测试只检查 `classList` 里没有 `on` 就算通过，而 CSS 里根本没有 `.on` 规则、
+  基态还是可见的 —— 类名变了，像素没变。**界面类断言必须读 `getComputedStyle`
+  的 `visibility`/`opacity`/`display`，并按 URL 归属请求，不能只信类名。**
 - **`WebFetch` 有 15 分钟自缓存**：验证部署后刷新必须加 `?_ts=N` 破缓存，否则会把"旧快照"误判成"改动没生效"（本项目误判过一次首页『行情加载中』）。
+- **静态资源被平台边缘缓存**：抓 `/static/xxx` 判断"改动是否生效"前，先加 `?ts=N`
+  看是不是缓存版本（响应头的 `age` 会暴露），否则会误判成部署失败。
 - **`curl`/`urllib` 返回 200 不能说明"点了有反应"**，交互问题必须用真实浏览器验。
   本机可直接用：`NODE_PATH=%USERPROFILE%\.workbuddy\binaries\node\workspace\node_modules`
   + `%LOCALAPPDATA%\ms-playwright\chromium-*\chrome-win64\chrome.exe`（Playwright 已装）。
