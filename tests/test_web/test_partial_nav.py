@@ -86,3 +86,70 @@ def test_toplevel_lexical_declarations_are_frozen():
         f"  新增: {sorted(found - EXPECTED_TOPLEVEL_LEXICAL)}\n"
         f"  消失: {sorted(EXPECTED_TOPLEVEL_LEXICAL - found)}"
     )
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 以下两条对应线上真实事故，都是「不报错、不 500，只是体验坏掉」的类型，
+# 只能靠测试盯住。
+# ══════════════════════════════════════════════════════════════════════
+
+CSS = Path(__file__).resolve().parents[2] / "src" / "web" / "static" / "style.css"
+
+
+def _css_block(selector: str) -> str:
+    """取出某个顶层选择器的声明块（不做完整 CSS 解析，够用即可）。"""
+    src = CSS.read_text(encoding="utf-8")
+    m = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", src)
+    assert m, f"style.css 里找不到 {selector} 规则"
+    return m.group(1)
+
+
+def test_loading_indicator_is_hidden_until_on_class():
+    """加载提示必须「默认隐藏、靠 .on 显示」。
+
+    事故背景：`#navLoading` 由 JS 创建后长期复用，`hideLoading()` 只做
+    「移除 .on」。如果 CSS 里没有 `.on` 规则、基态又是可见的，那么移除类名
+    不会有任何视觉变化 —— 遮罩从第一次跳转起就永久盖在页面上，整站看起来
+    "蒙了一层且永不消失"（线上真实发生过，且此前所有测试都通过了，
+    因为它们只断言类名、不看计算样式）。
+    """
+    base = _css_block("#navLoading")
+    assert re.search(r"visibility\s*:\s*hidden", base), \
+        "#navLoading 基态必须 visibility:hidden，否则它一旦创建就永久可见"
+    assert re.search(r"opacity\s*:\s*0\b", base), \
+        "#navLoading 基态必须 opacity:0"
+    assert re.search(r"pointer-events\s*:\s*none", base), \
+        "加载提示绝不能拦截用户点击"
+
+    on = _css_block("#navLoading.on")
+    assert re.search(r"visibility\s*:\s*visible", on), \
+        "#navLoading.on 必须把 visibility 打开（否则加载中看不到提示）"
+    assert re.search(r"opacity\s*:\s*1\b", on), \
+        "#navLoading.on 必须把 opacity 拉到 1"
+
+    # 基态不能是全屏不透明遮挡：那会把"加载慢"放大成"网站挂了"
+    assert "bottom: 0" not in base, "#navLoading 不应铺满视口（会盖住正文）"
+
+
+def test_nav_targets_do_not_redirect():
+    """每个导航项都必须能直连拿到 HTML，不允许依赖 3xx 跳转。
+
+    事故背景：`/screening` 曾被注册成 `/screening/`，访问 `/screening` 会
+    返回 `307 Location: http://…/screening/`。应用在平台 https 网关后面，
+    redirect 的绝对 URL 是明文 http，页面在 https iframe 内会被浏览器按
+    「混合内容」拦掉 —— 用户看到的就是"点漏斗进不去/没反应"。
+    浏览器跟随重定向的整页刷新能掩盖这个问题，fetch 局部加载不能。
+    """
+    html = BASE.read_text(encoding="utf-8")
+    nav_hrefs = re.findall(r'<a href="(/[^"]*)"[^>]*aria-label="[^"]*"', html)
+    assert nav_hrefs, "没能从 base.html 提取到导航项"
+
+    with TestClient(app) as client:
+        for path in nav_hrefs:
+            r = client.get(path, follow_redirects=False)
+            assert r.status_code == 200, (
+                f"导航项 {path} 返回 {r.status_code}"
+                + (f"，Location={r.headers.get('location')}" if r.is_redirect else "")
+            )
+            assert "text/html" in r.headers.get("content-type", ""), path
+            assert 'id="page-root"' in r.text, path

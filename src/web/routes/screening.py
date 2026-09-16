@@ -11,13 +11,23 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from ..deps import templates
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/screening", tags=["screening"])
+
+# 注意：本路由**不使用 prefix="/screening"**。
+# 用 prefix + @router.get("/") 会把页面注册成 `/screening/`，导致 `/screening`
+# 落到 Starlette 的尾斜杠重定向：线上实测返回
+#     307 Location: http://aitrader--e.pocketbay.app/screening/
+# 应用跑在平台 https 网关后面，生成的绝对 URL 是明文 http —— 页面在 https
+# iframe 内，跟随该重定向会被浏览器按「混合内容」拦掉，表现就是
+# 「点漏斗没反应/进不去」。这里把路径写成全量、与其它页面路由（/signals、
+# /reports 等）保持一致，两个形态都直接 200，彻底不产生重定向。
+router = APIRouter(tags=["screening"])
 
 # 漏斗任务缓存（task_id -> result）
 _pending_tasks: dict[str, dict] = {}
 
 
-@router.get("/", response_class=HTMLResponse)
+@router.get("/screening", response_class=HTMLResponse)
+@router.get("/screening/", response_class=HTMLResponse, include_in_schema=False)
 async def screening_page(request: Request):
     """漏斗页面 — 参数选择 + 结果展示。"""
     return templates.TemplateResponse(
@@ -26,7 +36,7 @@ async def screening_page(request: Request):
     )
 
 
-@router.get("/api/run")
+@router.get("/screening/api/run")
 async def api_run_screening(
     request: Request,
     universe: str = Query("hs300"),
@@ -117,7 +127,7 @@ async def api_run_screening(
     })
 
 
-@router.get("/api/config")
+@router.get("/screening/api/config")
 async def api_get_config():
     """获取当前漏斗配置。"""
     from ...config import load_screening_config

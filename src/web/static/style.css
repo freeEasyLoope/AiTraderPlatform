@@ -1686,38 +1686,56 @@ a:hover {
   }
 }
 
-/* ── 站内跳转反馈遮罩（见 base.html 的 navFeedback） ──
-   整页导航期间若请求被挂住（应用被平台休眠 / 冷启动），原界面毫无变化，
-   用户会以为按钮坏了。这里给出可见反馈并明确提示可能在唤醒。
+/* ── 站内跳转加载提示（见 base.html 的 asyncNav） ──
+   局部加载期间给出可见反馈：顶部进度条 + 内容淡化 + 一条状态提示。
+
+   ⚠️ 这里必须默认隐藏、只有 `.on` 才显示。该元素由 JS 创建后长期复用，
+   若默认就是可见的，hideLoading() 去掉 `.on` 不会有任何效果 —— 遮罩会
+   永久盖在页面上，整站看起来"蒙了一层且永不消失"（线上真实事故）。
+
+   刻意不做全屏深色模糊：那会把"加载慢"放大成"网站挂了"，而页面内容本身
+   正是用户要等的东西，不该被盖住。只做一条贴顶提示 + 内容淡化即可。
+   定位在导航栏下方（nav 高 60px），避免遮住导航高亮状态。
    pointer-events:none 是硬要求：绝不能让加载态拦住用户的后续点击。 */
 #navLoading {
   position: fixed;
-  top: 0;
+  top: 68px;
   left: 0;
   right: 0;
-  bottom: 0;
   z-index: 400;
   display: flex;
-  align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
   pointer-events: none;
-  animation: fadeIn 0.15s var(--ease-out);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px);
+  /* 隐藏时让 visibility 延迟到淡出结束再切；显示时立即切。 */
+  transition: opacity 0.18s var(--ease-out),
+              transform 0.18s var(--ease-out),
+              visibility 0s linear 0.18s;
+}
+#navLoading.on {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition: opacity 0.18s var(--ease-out),
+              transform 0.18s var(--ease-out),
+              visibility 0s linear 0s;
 }
 
 .nav-loading-box {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 14px 22px;
+  max-width: min(78vw, 460px);
+  padding: 10px 16px;
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: 999px;
   box-shadow: var(--shadow-lg);
-  color: var(--text);
-  font-size: 14px;
+  color: var(--text2);
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .nav-loading-spin {
@@ -1731,6 +1749,42 @@ a:hover {
 
 @keyframes navSpin {
   to { transform: rotate(360deg); }
+}
+
+/* 兜底失败态：整页导航被环境拦住时，加载提示转成"可操作"。
+   父层是 pointer-events:none，这里必须显式恢复，否则按钮点不动。 */
+#navLoading.stuck .nav-loading-spin {
+  animation: none;
+  border-top-color: var(--text3);
+}
+#navLoading.stuck #navLoadingMsg {
+  color: var(--text2);
+}
+#navLoadingActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 4px;
+}
+#navLoadingActions[hidden] {
+  display: none;
+}
+.nav-retry {
+  pointer-events: auto;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.nav-retry:hover {
+  background: rgba(56, 189, 248, 0.12);
 }
 
 /* ── 异步站内导航：局部加载（见 base.html 的 asyncNav） ──
@@ -1766,12 +1820,13 @@ a:hover {
   to   { transform: translateX(400%); }
 }
 
-/* 交换边界：换入新内容时旧内容淡出，而不是瞬间清空造成"白屏"观感 */
+/* 交换边界：换入新内容时旧内容淡出，而不是瞬间清空造成"白屏"观感。
+   淡化程度刻意保守 —— 淡太狠会让人以为页面坏了。 */
 #page-root {
   transition: opacity 0.15s var(--ease-out);
 }
 #page-root.busy {
-  opacity: 0.38;
+  opacity: 0.5;
 }
 
 nav .nav-group a.nav-pending {
@@ -1791,10 +1846,4 @@ nav .nav-group a.nav-pending::after {
 @keyframes navPulse {
   0%, 100% { opacity: 0.25; }
   50%      { opacity: 1; }
-}
-
-/* 加载遮罩文案允许换行（唤醒提示较长），并保持可点透 */
-.nav-loading-box {
-  max-width: min(78vw, 420px);
-  text-align: left;
 }

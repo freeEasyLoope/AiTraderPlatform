@@ -43,7 +43,7 @@
             <a href="/challenge" class="{{ 'active' if request.url.path == '/challenge' else '' }}" aria-label="模拟挑战">
                 <span class="nav-icon">🏆</span> 挑战
             </a>
-            <a href="/screening" class="{{ 'active' if request.url.path == '/screening' else '' }}" aria-label="选股漏斗">
+            <a href="/screening" class="{{ 'active' if request.url.path.rstrip('/') == '/screening' else '' }}" aria-label="选股漏斗">
                 <span class="nav-icon">⧩</span> 漏斗
             </a>
             <a href="/reports" class="{{ 'active' if request.url.path == '/reports' else '' }}" aria-label="交易日志与周报">
@@ -298,9 +298,17 @@
                 overlay.id = 'navLoading';
                 overlay.setAttribute('role', 'status');
                 overlay.setAttribute('aria-live', 'polite');
-                overlay.innerHTML = '<div class="nav-loading-box"><span class="nav-loading-spin"></span>'
-                                  + '<span id="navLoadingMsg"></span></div>';
+                overlay.innerHTML = '<div class="nav-loading-box">'
+                                  + '<span class="nav-loading-spin"></span>'
+                                  + '<span id="navLoadingMsg"></span>'
+                                  + '<span id="navLoadingActions" hidden>'
+                                  +   '<a class="nav-retry" id="navRetryLink">重试</a>'
+                                  +   '<button class="nav-retry" id="navRetryReload" type="button">刷新整页</button>'
+                                  + '</span>'
+                                  + '</div>';
                 document.body.appendChild(overlay);
+                var reloadBtn = overlay.querySelector('#navRetryReload');
+                if (reloadBtn) reloadBtn.addEventListener('click', function () { location.reload(); });
             }
         }
 
@@ -320,6 +328,10 @@
         function showLoading(label) {
             ensureUI();
             startedAt = Date.now();
+            reloading = false;
+            overlay.classList.remove('stuck');
+            var acts = document.getElementById('navLoadingActions');
+            if (acts) acts.hidden = true;
             bar.classList.add('on');
             overlay.classList.add('on');
             root.classList.add('busy');
@@ -341,12 +353,34 @@
             if (phaseTimer) { clearInterval(phaseTimer); phaseTimer = null; }
             if (failsafe) { clearTimeout(failsafe); failsafe = null; }
             if (bar) bar.classList.remove('on');
-            if (overlay) overlay.classList.remove('on');
+            if (overlay) {
+                overlay.classList.remove('on');
+                overlay.classList.remove('stuck');
+            }
+            var acts = document.getElementById('navLoadingActions');
+            if (acts) acts.hidden = true;
             root.classList.remove('busy');
             root.removeAttribute('aria-busy');
         }
 
         function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+        // 尾斜杠归一化：`/screening` 与 `/screening/` 视为同一页。
+        // 服务端两种形态都可能出现（有路由按 `/xxx/` 注册过），不归一化会出现
+        // 「已经在漏斗页、再点漏斗又被当成新跳转」以及导航高亮匹配不上的问题。
+        function normPath(p) {
+            if (!p) return p;
+            if (p.length > 1 && p.charAt(p.length - 1) === '/') return p.slice(0, -1);
+            return p;
+        }
+
+        // 把绝对/相对 URL 归一成「路径 + 查询串」，作为导航键与地址栏内容。
+        function keyOf(u) {
+            try {
+                var x = new URL(u, location.href);
+                return x.pathname + x.search;
+            } catch (e) { return null; }
+        }
 
         // 点击后立刻把选中项点亮：先给"我收到了"的反馈，再谈加载快慢。
         function markPending(a) {
@@ -361,13 +395,15 @@
         }
 
         function setActiveNav(path) {
+            var want = normPath(path);
             var links = document.querySelectorAll('nav .nav-group a');
             var matched = false, target = null;
             for (var i = 0; i < links.length; i++) {
                 var p = links[i].getAttribute('href') || '';
-                if (p === path) { target = links[i]; matched = true; break; }
+                if (p === '/' && want === '/') { target = links[i]; matched = true; break; }
+                if (p !== '/' && normPath(p) === want) { target = links[i]; matched = true; break; }
                 // 详情页（/stock/x、/trader/x）无对应导航项，保持原有高亮不变
-                if (p !== '/' && path.indexOf(p + '/') === 0) { target = links[i]; matched = true; break; }
+                if (p !== '/' && want.indexOf(normPath(p) + '/') === 0) { target = links[i]; matched = true; break; }
             }
             if (!matched) return;
             for (var j = 0; j < links.length; j++) links[j].classList.remove('active', 'nav-pending');
@@ -410,16 +446,45 @@
             if (reloading) return;
             reloading = true;
             setMsg('正在重新载入…');
-            location.assign(url.pathname + url.search);
+            var target = url.pathname + url.search;
+            var before = location.href;
+            // 先挂探针再导航：整页导航也可能被环境拦住（平台网关策略、浏览器
+            // 按混合内容拦截等），此时文档不会变，页面就会永远停在加载态 ——
+            // 那正是用户口中的"点了没反应"。超时必须先注册，因为 assign 本身
+            // 也可能直接抛错，那样就再没有任何东西能把页面救回来了。
+            setTimeout(function () {
+                if (location.href === before) showStuck(target);
+            }, 4000);
+            try {
+                location.assign(target);
+            } catch (e) {
+                showStuck(target);
+            }
+        }
+
+        // 跳转被拦住时：加载态转为"可操作"状态（文案 + 重试入口）
+        function showStuck(target) {
+            ensureUI();
+            reloading = false;
+            overlay.classList.add('on');
+            overlay.classList.add('stuck');
+            setMsg('页面未能自动载入，可手动重试。');
+            var link = document.getElementById('navRetryLink');
+            if (link) link.setAttribute('href', target);
+            var acts = document.getElementById('navLoadingActions');
+            if (acts) acts.hidden = false;
         }
 
         // ── 把拉到的 HTML 应用上去 ──
-        function apply(html, url, opts) {
+        // finalUrl：fetch 跟随重定向后的最终地址（没有重定向时等于请求地址）。
+        // 地址栏以它为准，避免"服务端 3xx 到别处、地址栏却还写着原路径"。
+        function apply(html, url, opts, finalUrl) {
             var doc;
             try { doc = new DOMParser().parseFromString(html, 'text/html'); } catch (e) { return false; }
             var newRoot = doc && doc.getElementById('page-root');
             if (!newRoot || !newRoot.innerHTML.trim()) return false;
-            var key = url.pathname + url.search;
+            // 地址栏目标：优先用最终响应地址（重定向后才是真实页面）
+            var target = keyOf(finalUrl) || (url.pathname + url.search);
 
             var body = doc.getElementById('page-scripts');
             // 页面 <script> 可能与内容同处一块（screening.html 就在 content 里），
@@ -444,15 +509,15 @@
             if (typeof closeConfirm === 'function') closeConfirm();
 
             clearPending();
-            setActiveNav(url.pathname);
+            setActiveNav(normPath(target.split('?')[0]));
             if (opts.scroll !== false) window.scrollTo(0, 0);
-            if (opts.push !== false) history.pushState({ pn: 1 }, '', key);
+            if (opts.push !== false) history.pushState({ pn: 1 }, '', target);
 
             runScripts(codes, url);
             return true;
         }
 
-        // ── 取页面（带命中缓存 / 超时 / 重试） ──
+        // ── 取页面（带超时 / 返回最终地址） ──
         function fetchHTML(key, signal) {
             return fetch(key, {
                 signal: signal,
@@ -463,7 +528,12 @@
                 if (!resp.ok) throw new Error('HTTP ' + resp.status);
                 var ct = resp.headers.get('content-type') || '';
                 if (ct.indexOf('html') < 0) throw new Error('非 HTML 响应：' + ct);
-                return resp.text();
+                // resp.url 是跟随重定向后的最终地址，绝不能假定它等于请求地址：
+                // 服务端回 3xx 时 Location 可能是绝对 URL（线上曾出现明文 http://，
+                // 被浏览器当混合内容拦掉），拿到最终地址才能正确记账并暴露问题。
+                return resp.text().then(function (html) {
+                    return { html: html, finalUrl: resp.url || key };
+                });
             });
         }
 
@@ -478,7 +548,7 @@
             var hit = cache[key];
             if (hit && Date.now() - hit.t < CACHE_TTL) {
                 delete cache[key];
-                if (apply(hit.html, url, opts)) { pending = null; return; }
+                if (apply(hit.html, url, opts, hit.finalUrl)) { pending = null; return; }
             }
 
             showLoading(opts.label ? '正在加载 ' + opts.label + '…' : '正在加载…');
@@ -487,9 +557,13 @@
             function attempt() {
                 tries++;
                 var timer = setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, TIMEOUT);
-                return fetchHTML(key, ctrl.signal).then(function (html) {
+                return fetchHTML(key, ctrl.signal).then(function (res) {
                     clearTimeout(timer);
-                    if (apply(html, url, opts)) { pending = null; hideLoading(); return true; }
+                    if (apply(res.html, url, opts, res.finalUrl)) {
+                        pending = null;
+                        hideLoading();
+                        return true;
+                    }
                     throw new Error('页面结构不符合预期');
                 }).catch(function (err) {
                     clearTimeout(timer);
@@ -521,7 +595,8 @@
             var p = u.pathname;
             if (p.indexOf('/api/') === 0 || p.indexOf('/static/') === 0 || p.indexOf('/.pocketbay/') === 0) return null;
             if (/\.(png|jpe?g|gif|svg|ico|css|js|json|csv|xlsx?|pdf|zip|txt)$/i.test(p)) return null;
-            if (u.pathname === location.pathname && u.search === location.search) return null;
+            // 已在目标页（含尾斜杠同义形态）就不必再走一次跳转
+            if (normPath(u.pathname) === normPath(location.pathname) && u.search === location.search) return null;
             return u;
         }
 
@@ -574,8 +649,9 @@
             prefetchKey = key;
             var ctrl = new AbortController();
             var timer = setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, TIMEOUT);
-            fetchHTML(key, ctrl.signal).then(function (html) {
-                cache[key] = { t: Date.now(), html: html };
+            fetchHTML(key, ctrl.signal).then(function (res) {
+                // 连最终地址一起缓存：命中缓存时地址栏同样要对得上
+                cache[key] = { t: Date.now(), html: res.html, finalUrl: res.finalUrl };
                 var keys = Object.keys(cache);
                 if (keys.length > 4) delete cache[keys[0]];
             }).catch(function () {}).then(function () {
