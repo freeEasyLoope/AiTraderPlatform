@@ -1,5 +1,0 @@
-To https://github.com/freeEasyLoope/AiTraderPlatform.git
-   9cf047d..88276ad  main -> main
-PUSH_EXIT=0
-88276adf072355a9c0761d9348d57013674ca39a	HEAD
-88276adf072355a9c0761d9348d57013674ca39a	refs/heads/main
