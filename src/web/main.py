@@ -57,23 +57,28 @@ async def lifespan(app: FastAPI):
         and (bool(sched_cfg.get("run_in_web")) or deployed)
     )
     if want_scheduler:
-        from ..analysis.llm_reporter import LLMReporter
-        from ..engine.factory import build_simulator
+        try:
+            from ..analysis.llm_reporter import LLMReporter
+            from ..engine.factory import build_simulator
 
-        llm_cfg = settings.get("llm", {}) or {}
-        reporter = LLMReporter(
-            repo,
-            model=llm_cfg.get("model", "claude-sonnet-4-6"),
-            max_tokens=llm_cfg.get("max_tokens", 4096),
-            temperature=llm_cfg.get("temperature", 0.3),
-        )
-        scheduler = TradingScheduler(build_simulator(repo), reporter=reporter)
-        scheduler.start(
-            trading_time=sched_cfg.get("trading_time", "21:00"),
-            report_time=sched_cfg.get("weekly_report_time", "21:30"),
-            report_day=sched_cfg.get("weekly_report_day", "fri"),
-        )
-        logger.info("进程内调度已启用（时区 %s）", os.environ.get("TZ", "?"))
+            llm_cfg = settings.get("llm", {}) or {}
+            reporter = LLMReporter(
+                repo,
+                model=llm_cfg.get("model", "claude-sonnet-4-6"),
+                max_tokens=llm_cfg.get("max_tokens", 4096),
+                temperature=llm_cfg.get("temperature", 0.3),
+            )
+            scheduler = TradingScheduler(build_simulator(repo), reporter=reporter)
+            scheduler.start(
+                trading_time=sched_cfg.get("trading_time", "21:00"),
+                report_time=sched_cfg.get("weekly_report_time", "21:30"),
+                report_day=sched_cfg.get("weekly_report_day", "fri"),
+            )
+            logger.info("进程内调度已启用（时区 %s）", os.environ.get("TZ", "?"))
+        except Exception:
+            # 定时任务装配失败不能拖垮 web 服务：平台探活失败 = 整站判定不可用
+            scheduler = None
+            logger.exception("进程内调度启用失败，本次以无调度模式启动")
     else:
         logger.info("进程内调度未启用（本地模式，可用 cli.py schedule 单独跑）")
 
