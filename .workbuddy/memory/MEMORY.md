@@ -77,7 +77,13 @@
 ## Web 层约定（托管平台交互）
 - **动态响应一律 `Cache-Control: no-store`**（`web/main.py:DynamicNoStore`，纯 ASGI 中间件；用 `BaseHTTPMiddleware` 会缓冲响应体、与 `StaticFiles` 的 `FileResponse` 组合易出问题）。实时看板 HTML 被缓存会显示过时价格。`/static/*` 保持可缓存。
 - **`GET /api/ping` 是保活端点**，只证明进程还在、**不做任何外部探测**；`/api/health` 会真的探数据源（秒级），不可互相替代。前端在页面可见且有操作时每 2 分钟打一次，30 分钟无操作停止。
-- **站内跳转要有可见反馈**（`base.html` navFeedback / `style.css` `#navLoading`）：点击即显示「正在打开…」，超 6s 改「应用正在唤醒，请稍候…」。遮罩必须 `pointer-events:none` 且定时自动移除。
+- **站内跳转是「异步局部加载」，不是整页导航**（`base.html` `asyncNav` / `style.css` `#navProgress`+`#navLoading`）。
+  - 交换边界：`#page-root`（内容，包住 `.container`）与 `#page-scripts`（页面脚本）**必须分开**——`screening.html` 的 `<script>` 写在 content 块里；且 `innerHTML` 插入的 `<script>` 不会执行，必须手动按块重放。
+  - **页面脚本禁止出现行首（零缩进）`let`/`const`**：同一文档二次注入会抛 `Identifier 'x' has already been declared`，整个脚本不执行 → 复访该页功能静默失效。前端用 `deLexicalize()` 把行首 let/const 降级为 `var`（函数体内的块级作用域不动）；清单被 `tests/test_web/test_partial_nav.py` 冻结。
+  - 加载态三件套：顶部不确定进度条 + 内容淡化（旧内容保留不白屏）+ 分阶段文案（正在加载 → 正在计算行情数据 → 应用可能正在唤醒，带已等待秒数）。必须 `pointer-events:none`。
+  - 任何环节不符合预期（非 HTML 响应 / 缺边界 / 超时重试后仍失败）→ 回退整页导航，最坏不比原来差。**表单提交语义保持整页提交**，只补可见反馈。
+  - 悬停预取必须**串行 + 防抖**（单进程容器，并发预取会压住重计算页面）。pushState 后要**自己更新导航高亮**（服务端算的 `active` class 不会重算）。
+  - 复用：改这类页面时，新页面只要 `{% extends "base.html" %}` 就自动获得全部能力。
 - 导航状态灯口径：行情 = `realtime||sina`、历史 = `history||baostock`、财务 = `tushare`。**不要只看 `sina`**，否则多源链可用时状态灯仍是红的。
 - `base.html` 用内联 data-URI SVG favicon（原本没有 favicon，浏览器自动请求 `/favicon.ico` 会 404）。
 - **待用户决定**：A 股涨跌配色目前是"涨绿跌红"（国际惯例），中国习惯应为**涨红跌绿**。
