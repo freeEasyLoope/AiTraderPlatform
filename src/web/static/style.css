@@ -1732,3 +1732,69 @@ a:hover {
 @keyframes navSpin {
   to { transform: rotate(360deg); }
 }
+
+/* ── 异步站内导航：局部加载（见 base.html 的 asyncNav） ──
+   跳转不再是整页刷新，所以需要三件事同时可见：
+   ① 顶部不确定进度条（一眼看出"点击生效了"）；
+   ② 内容区淡化 + 遮罩文案（说明在等什么、等了多久）；
+   ③ 被点击的导航项进入待定态（明确"你点的是这个"）。 */
+#navProgress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 1100;
+  display: none;
+  overflow: hidden;
+  background: rgba(56, 189, 248, 0.12);
+}
+#navProgress.on {
+  display: block;
+}
+#navProgress i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 34%;
+  background: linear-gradient(90deg, transparent, var(--accent), var(--accent2), transparent);
+  animation: navSlide 1.1s linear infinite;
+}
+@keyframes navSlide {
+  from { transform: translateX(-110%); }
+  to   { transform: translateX(400%); }
+}
+
+/* 交换边界：换入新内容时旧内容淡出，而不是瞬间清空造成"白屏"观感 */
+#page-root {
+  transition: opacity 0.15s var(--ease-out);
+}
+#page-root.busy {
+  opacity: 0.38;
+}
+
+nav .nav-group a.nav-pending {
+  color: var(--accent);
+}
+nav .nav-group a.nav-pending::after {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  vertical-align: middle;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: navPulse 0.9s ease-in-out infinite;
+}
+@keyframes navPulse {
+  0%, 100% { opacity: 0.25; }
+  50%      { opacity: 1; }
+}
+
+/* 加载遮罩文案允许换行（唤醒提示较长），并保持可点透 */
+.nav-loading-box {
+  max-width: min(78vw, 420px);
+  text-align: left;
+}

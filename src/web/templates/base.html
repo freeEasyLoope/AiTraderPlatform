@@ -57,8 +57,12 @@
         <span id="dsStatus" title="数据源状态检测中...">◌ 检测中</span>
     </nav>
 
-    <div class="container">
-        {% block content %}{% endblock %}
+    <!-- #page-root 是异步导航的「内容交换边界」：站内跳转只替换它的内部 HTML。
+         .container 挪到里面，样式与页面脚本的查询路径都不受影响。 -->
+    <div id="page-root">
+        <div class="container">
+            {% block content %}{% endblock %}
+        </div>
     </div>
 
     <!-- 股票详情弹窗 -->
@@ -82,7 +86,10 @@
         </div>
     </div>
 
-    {% block scripts %}{% endblock %}
+    <!-- #page-scripts 是页面脚本的交换边界。必须与 #page-root 分开：
+         部分模板的 <script> 写在 content 块里（如 screening.html），
+         归到同一个边界里会让「内容」和「脚本」混在一起难以按序重放。 -->
+    <div id="page-scripts">{% block scripts %}{% endblock %}</div>
 
     <!-- 确认对话框 -->
     <div class="confirm-overlay" id="confirmDialog">
@@ -257,37 +264,325 @@
         });
     })();
 
-    // ── 站内跳转反馈 ──
-    // 整页导航期间若请求被挂住（应用休眠 / 冷启动），原先界面毫无变化，用户会以为
-    // 按钮坏了。这里点击站内链接立即给出可见反馈，超过 6s 明确提示可能正在唤醒。
-    // 遮罩设 pointer-events:none 且 20s 后自动消失，绝不会把用户困在页面上。
-    (function navFeedback() {
-        var overlay = null;
-        function show() {
-            if (overlay) return;
-            overlay = document.createElement('div');
-            overlay.id = 'navLoading';
-            overlay.innerHTML = '<div class="nav-loading-box"><span class="nav-loading-spin"></span>'
-                              + '<span id="navLoadingMsg">正在打开…</span></div>';
-            document.body.appendChild(overlay);
-            setTimeout(function () {
-                var m = document.getElementById('navLoadingMsg');
-                if (m) m.textContent = '应用正在唤醒，请稍候…';
-            }, 6000);
-            setTimeout(function () {
-                if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
-                overlay = null;
-            }, 20000);
+    // ── 异步站内导航（局部加载） ──
+    // 痛点：站内跳转在 iframe 内是「整页导航」。请求一旦被挂住（应用被平台休眠 /
+    // 冷启动 / 服务端首次计算行情），旧界面完全静止，用户只能猜「是不是网断了」。
+    // 做法：拦截站内链接 → 立即进入可见加载态 → fetch 目标页 HTML → 只替换 #page-root
+    // 并按序重放页面脚本 → pushState 更新 URL。任一环节不符合预期就回退整页导航，
+    // 保证「最坏情况也不比原来更差」。
+    (function asyncNav() {
+        var root = document.getElementById('page-root');
+        var scriptHost = document.getElementById('page-scripts');
+        if (!root || !scriptHost || !window.fetch || !window.history || !window.DOMParser) return;
+
+        var CACHE_TTL = 10000;   // 悬停预取命中窗口：10s 内数据等价，用来换「秒开」
+        var TIMEOUT = 30000;     // 单次请求上限（线上冷启动实测最长约 10s）
+        var MAX_TRIES = 2;       // 超时后重试 1 次（顺带把可能已休眠的应用叫醒）
+        var HOVER_DELAY = 260;   // 悬停多久才预取，避免划过就连锁触发
+        var cache = {};          // key -> { t, html }
+        var pending = null;      // 当前导航的 AbortController
+        var prefetchKey = null;  // 预取串行：单进程容器，绝不并发压多个重计算页面
+        var bar = null, overlay = null, phaseTimer = null, startedAt = 0, failsafe = null;
+        var reloading = false;
+
+        // ── 加载态：顶部进度条（不确定进度）+ 遮罩文案 ──
+        function ensureUI() {
+            if (!bar) {
+                bar = document.createElement('div');
+                bar.id = 'navProgress';
+                bar.innerHTML = '<i></i>';
+                document.body.appendChild(bar);
+            }
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.id = 'navLoading';
+                overlay.setAttribute('role', 'status');
+                overlay.setAttribute('aria-live', 'polite');
+                overlay.innerHTML = '<div class="nav-loading-box"><span class="nav-loading-spin"></span>'
+                                  + '<span id="navLoadingMsg"></span></div>';
+                document.body.appendChild(overlay);
+            }
         }
+
+        function setMsg(txt) {
+            var el = document.getElementById('navLoadingMsg');
+            if (el) el.textContent = txt;
+        }
+
+        // 分阶段文案：让用户随时知道"还在动"，而不是静止等待。
+        function phaseText(sec) {
+            if (sec >= 15) return '仍在等待服务器响应…';
+            if (sec >= 7) return '应用可能正在唤醒，请稍候…';
+            if (sec >= 2.5) return '正在计算行情数据…';
+            return '正在加载…';
+        }
+
+        function showLoading(label) {
+            ensureUI();
+            startedAt = Date.now();
+            bar.classList.add('on');
+            overlay.classList.add('on');
+            root.classList.add('busy');
+            root.setAttribute('aria-busy', 'true');
+            setMsg(label || '正在加载…');
+            if (phaseTimer) clearInterval(phaseTimer);
+            phaseTimer = setInterval(function () {
+                var sec = (Date.now() - startedAt) / 1000;
+                var txt = phaseText(sec);
+                if (sec >= 2) txt += '（已等待 ' + Math.floor(sec) + 's）';
+                setMsg(txt);
+            }, 250);
+            // 安全阀：任何异常路径都不会把加载态永久留在页面上
+            if (failsafe) clearTimeout(failsafe);
+            failsafe = setTimeout(function () { hideLoading(); }, 60000);
+        }
+
+        function hideLoading() {
+            if (phaseTimer) { clearInterval(phaseTimer); phaseTimer = null; }
+            if (failsafe) { clearTimeout(failsafe); failsafe = null; }
+            if (bar) bar.classList.remove('on');
+            if (overlay) overlay.classList.remove('on');
+            root.classList.remove('busy');
+            root.removeAttribute('aria-busy');
+        }
+
+        function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+        // 点击后立刻把选中项点亮：先给"我收到了"的反馈，再谈加载快慢。
+        function markPending(a) {
+            var links = document.querySelectorAll('nav .nav-group a');
+            for (var i = 0; i < links.length; i++) links[i].classList.remove('active', 'nav-pending');
+            if (a) a.classList.add('nav-pending');
+        }
+
+        function clearPending() {
+            var links = document.querySelectorAll('nav .nav-group a.nav-pending');
+            for (var i = 0; i < links.length; i++) links[i].classList.remove('nav-pending');
+        }
+
+        function setActiveNav(path) {
+            var links = document.querySelectorAll('nav .nav-group a');
+            var matched = false, target = null;
+            for (var i = 0; i < links.length; i++) {
+                var p = links[i].getAttribute('href') || '';
+                if (p === path) { target = links[i]; matched = true; break; }
+                // 详情页（/stock/x、/trader/x）无对应导航项，保持原有高亮不变
+                if (p !== '/' && path.indexOf(p + '/') === 0) { target = links[i]; matched = true; break; }
+            }
+            if (!matched) return;
+            for (var j = 0; j < links.length; j++) links[j].classList.remove('active', 'nav-pending');
+            target.classList.add('active');
+        }
+
+        // ── 页面脚本重放 ──
+        // 顶层 let/const 会进入全局词法环境，同一文档里二次注入会抛
+        // "Identifier 'x' has already been declared"。这些模板的顶层声明都写在行首
+        // （缩进为 0），而函数体内的声明都有缩进 —— 只把行首的 let/const 降级为 var，
+        // 语义等价且可重复声明，函数体内的块级作用域原样保留、行为不变。
+        function deLexicalize(code) {
+            return code.replace(/^(let|const)([ \t]+)/gm, 'var$2');
+        }
+
+        function runScripts(codes, url) {
+            var blocks = codes.filter(function (c) { return c && c.trim(); });
+            if (!blocks.length) return;
+            var guard = function (ev) {
+                var msg = String((ev && (ev.message || ev.error)) || '');
+                // 只在"声明冲突"这类确定性 SyntaxError 上回退：整页导航必然能修好；
+                // 其它运行时错误即使整页重载也一样，回退只会造成无意义的刷新。
+                if (/already been declared|SyntaxError/i.test(msg)) fallbackReload(url);
+            };
+            window.addEventListener('error', guard);
+            try {
+                // 按块独立注入，与原生多个 <script> 的语义一致：一块出错不牵连其它块
+                for (var i = 0; i < blocks.length; i++) {
+                    var node = document.createElement('script');
+                    node.textContent = deLexicalize(blocks[i]);
+                    document.body.appendChild(node);
+                    if (node.parentNode) node.parentNode.removeChild(node);
+                }
+            } finally {
+                setTimeout(function () { window.removeEventListener('error', guard); }, 3000);
+            }
+        }
+
+        function fallbackReload(url) {
+            if (reloading) return;
+            reloading = true;
+            setMsg('正在重新载入…');
+            location.assign(url.pathname + url.search);
+        }
+
+        // ── 把拉到的 HTML 应用上去 ──
+        function apply(html, url, opts) {
+            var doc;
+            try { doc = new DOMParser().parseFromString(html, 'text/html'); } catch (e) { return false; }
+            var newRoot = doc && doc.getElementById('page-root');
+            if (!newRoot || !newRoot.innerHTML.trim()) return false;
+            var key = url.pathname + url.search;
+
+            var body = doc.getElementById('page-scripts');
+            // 页面 <script> 可能与内容同处一块（screening.html 就在 content 里），
+            // 所以先把内容放进去，再收集并摘除其中的 <script> 统一执行。
+            root.innerHTML = newRoot.innerHTML;
+            var inline = root.querySelectorAll('script');
+            var codes = [];
+            for (var i = 0; i < inline.length; i++) {
+                codes.push(inline[i].textContent || '');
+                inline[i].parentNode.removeChild(inline[i]);
+            }
+            if (body) {
+                var outer = body.querySelectorAll('script');
+                for (var k = 0; k < outer.length; k++) codes.push(outer[k].textContent || '');
+            }
+
+            var t = doc.querySelector('title');
+            if (t && t.textContent) document.title = t.textContent;
+
+            // 弹窗是共享外壳、在交换边界之外，不关掉会留下上一页的残留内容
+            if (typeof closeModal === 'function') closeModal();
+            if (typeof closeConfirm === 'function') closeConfirm();
+
+            clearPending();
+            setActiveNav(url.pathname);
+            if (opts.scroll !== false) window.scrollTo(0, 0);
+            if (opts.push !== false) history.pushState({ pn: 1 }, '', key);
+
+            runScripts(codes, url);
+            return true;
+        }
+
+        // ── 取页面（带命中缓存 / 超时 / 重试） ──
+        function fetchHTML(key, signal) {
+            return fetch(key, {
+                signal: signal,
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: { 'Accept': 'text/html,application/xhtml+xml', 'X-Partial-Nav': '1' }
+            }).then(function (resp) {
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                var ct = resp.headers.get('content-type') || '';
+                if (ct.indexOf('html') < 0) throw new Error('非 HTML 响应：' + ct);
+                return resp.text();
+            });
+        }
+
+        function navigate(url, opts) {
+            opts = opts || {};
+            var key = url.pathname + url.search;
+            if (pending) { try { pending.abort(); } catch (e) {} }
+            var ctrl = new AbortController();
+            pending = ctrl;
+
+            // 悬停预取命中：直接渲染（10s 窗口内数据等价），换来真正的"秒开"
+            var hit = cache[key];
+            if (hit && Date.now() - hit.t < CACHE_TTL) {
+                delete cache[key];
+                if (apply(hit.html, url, opts)) { pending = null; return; }
+            }
+
+            showLoading(opts.label ? '正在加载 ' + opts.label + '…' : '正在加载…');
+            var tries = 0;
+
+            function attempt() {
+                tries++;
+                var timer = setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, TIMEOUT);
+                return fetchHTML(key, ctrl.signal).then(function (html) {
+                    clearTimeout(timer);
+                    if (apply(html, url, opts)) { pending = null; hideLoading(); return true; }
+                    throw new Error('页面结构不符合预期');
+                }).catch(function (err) {
+                    clearTimeout(timer);
+                    if (tries < MAX_TRIES) {
+                        setMsg('加载较慢，正在重试…');
+                        ctrl = new AbortController();
+                        pending = ctrl;
+                        return sleep(1200).then(attempt);
+                    }
+                    // 兜底：整页导航。加载态保留到新文档接管，用户始终看得见反馈。
+                    fallbackReload(url);
+                    return true;
+                });
+            }
+
+            return attempt();
+        }
+
+        // ── 链接判定：只接管同源站内页面 ──
+        function resolve(a) {
+            var href = a.getAttribute('href');
+            if (!href || href.charAt(0) === '#') return null;
+            if (a.hasAttribute('download') || a.hasAttribute('data-no-partial')) return null;
+            if (a.target && a.target !== '_self') return null;
+            if (a.rel && /external/i.test(a.rel)) return null;
+            var u;
+            try { u = new URL(a.href, location.href); } catch (e) { return null; }
+            if (u.origin !== location.origin) return null;
+            var p = u.pathname;
+            if (p.indexOf('/api/') === 0 || p.indexOf('/static/') === 0 || p.indexOf('/.pocketbay/') === 0) return null;
+            if (/\.(png|jpe?g|gif|svg|ico|css|js|json|csv|xlsx?|pdf|zip|txt)$/i.test(p)) return null;
+            if (u.pathname === location.pathname && u.search === location.search) return null;
+            return u;
+        }
+
+        // ── 事件绑定 ──
         document.addEventListener('click', function (e) {
-            if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+            if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
             var a = e.target && e.target.closest ? e.target.closest('a') : null;
             if (!a) return;
-            if (a.target === '_blank' || a.hasAttribute('download')) return;
-            var href = a.getAttribute('href') || '';
-            if (href.charAt(0) !== '/' || href.indexOf('//') === 0) return;
-            show();
-        }, true);
+            var u = resolve(a);
+            if (!u) return;
+            e.preventDefault();
+            markPending(a);
+            var label = (a.getAttribute('aria-label') || a.textContent || '').replace(/\s+/g, ' ').trim();
+            navigate(u, { push: true, label: label });
+        }, false);
+
+        // 表单是"动作"（下单/改配置），语义保持整页提交，但同样给可见反馈
+        document.addEventListener('submit', function (e) {
+            if (e.defaultPrevented || reloading) return;
+            showLoading('正在提交…');
+        }, false);
+
+        window.addEventListener('popstate', function () {
+            var u;
+            try { u = new URL(location.href); } catch (e) { return; }
+            navigate(u, { push: false });
+        });
+        try { history.replaceState({ pn: 1 }, '', location.href); } catch (e) {}
+
+        // ── 悬停预取：把"等待渲染"提前到用户还在移动鼠标的时候 ──
+        if (window.matchMedia && window.matchMedia('(hover: hover)').matches) {
+            var hoverTimer = null;
+            document.addEventListener('mouseover', function (e) {
+                var a = e.target && e.target.closest ? e.target.closest('a') : null;
+                if (!a) return;
+                var u = resolve(a);
+                if (!u) return;
+                var key = u.pathname + u.search;
+                if (cache[key] && Date.now() - cache[key].t < CACHE_TTL) return;
+                if (hoverTimer) clearTimeout(hoverTimer);
+                hoverTimer = setTimeout(function () { prefetch(key); }, HOVER_DELAY);
+            }, { passive: true });
+            document.addEventListener('mouseout', function () {
+                if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; }
+            }, { passive: true });
+        }
+
+        function prefetch(key) {
+            if (prefetchKey || pending) return;   // 串行：宁可少预取，也不并发压服务器
+            prefetchKey = key;
+            var ctrl = new AbortController();
+            var timer = setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, TIMEOUT);
+            fetchHTML(key, ctrl.signal).then(function (html) {
+                cache[key] = { t: Date.now(), html: html };
+                var keys = Object.keys(cache);
+                if (keys.length > 4) delete cache[keys[0]];
+            }).catch(function () {}).then(function () {
+                clearTimeout(timer);
+                prefetchKey = null;
+            });
+        }
     })();
     </script>
 </body>
