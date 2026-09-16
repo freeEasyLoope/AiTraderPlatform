@@ -230,8 +230,14 @@ _DIAG_HTTP = [
      {**_UA, "Referer": "https://finance.sina.com.cn"}, "新浪实时行情（应返回 hq_str_sh600519=…）"),
     ("http://quotes.money.163.com/service/chddata.html"
      "?code=0600519&start=20260901&end=20260916&fields=TCLOSE", dict(_UA), "网易历史日线"),
+    ("https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData"
+     "?symbol=sh510300&scale=240&ma=no&datalen=5",
+     {**_UA, "Referer": "https://finance.sina.com.cn/"}, "新浪 KLine 日线（历史数据主源）"),
+    ("https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh510300,day,,,5,qfq",
+     {**_UA, "Referer": "https://gu.qq.com/"}, "腾讯 fqkline 日线（历史数据备源）"),
     ("https://push2his.eastmoney.com/api/qt/stock/kline/get"
-     "?secid=1.600519&fields1=f1&fields2=f51,f53&klt=101&fqt=1&lmt=5", dict(_UA),
+     "?secid=1.600519&ut=fa5fd1943c7b386f172d6893dbfba10b&fields1=f1,f2,f3,f4,f5,f6"
+     "&fields2=f51,f52,f53,f54,f55,f56&klt=101&fqt=1&beg=0&end=20500101&lmt=5", dict(_UA),
      "东方财富日线（akshare 同源）"),
     ("https://query1.finance.yahoo.com/v8/finance/chart/600519.SS?range=1mo&interval=1d",
      dict(_UA), "Yahoo 的 A 股日线（境外备用候选）"),

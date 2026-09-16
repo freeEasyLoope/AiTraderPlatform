@@ -18,11 +18,15 @@ from typing import Optional
 from urllib import request
 
 from .provider import MarketDataProvider, MarketSnapshot
+from ..runtime import run_with_timeout
 
 logger = logging.getLogger(__name__)
 
 # 模块级历史数据缓存（跨实例共享）
 _HIST_CACHE: dict[str, dict] = {}
+
+# baostock 兜底的等待上限：它不接受超时参数，不设界会把调用方线程永久挂住
+_BAOSTOCK_FALLBACK_TIMEOUT = 60.0
 
 # 抑制 baostock 的 login/logout 日志噪音
 logging.getLogger("baostock").setLevel(logging.WARNING)
@@ -292,18 +296,40 @@ class SinaClient(MarketDataProvider):
     def get_historical_data(
         self, symbols: list[str], start_date: str, end_date: str
     ) -> dict[str, list[MarketSnapshot]]:
-        """历史数据 — 模块级缓存，同日期区间只拉一次。"""
+        """历史数据 — 模块级缓存，同日期区间只拉一次。
+
+        取数顺序改为 **HTTP 源优先**（新浪/腾讯，可设超时、能快速失败），
+        baostock 只做兜底且必须设界——它无超时参数，数据源不可达时会永久挂起，
+        实测会拖死整个请求并导致平台探活失败、部署被判不可用。
+        取不到的标的缓存为空列表，避免每次调用重复重试。
+        """
+        from .kline_http import fetch_history_batch
+
         cache_key = f"{start_date}_{end_date}"
-        if cache_key in _HIST_CACHE:
-            cached = _HIST_CACHE[cache_key]
-            missing = [s for s in symbols if s not in cached]
-            if missing:
-                new_data = self._fetch_history_baostock_batch(missing, start_date, end_date)
-                cached.update(new_data)
-            return {s: cached[s] for s in symbols if s in cached}
-        result = self._fetch_history_baostock_batch(symbols, start_date, end_date)
-        _HIST_CACHE[cache_key] = result
-        return result
+        cached = _HIST_CACHE.get(cache_key)
+        if cached is None:
+            cached = {}
+            _HIST_CACHE[cache_key] = cached
+
+        missing = [s for s in symbols if s not in cached]
+        if missing:
+            cached.update(fetch_history_batch(missing, start_date, end_date))
+
+        # HTTP 源没拿到的，再用 baostock 兜底（设界，宁可少数据也不要卡死进程）
+        still = [s for s in missing if not cached.get(s)]
+        if still:
+            try:
+                got = run_with_timeout(
+                    lambda: self._fetch_history_baostock_batch(still, start_date, end_date),
+                    _BAOSTOCK_FALLBACK_TIMEOUT, None)
+            except Exception as e:
+                logger.warning(f"baostock 兜底失败: {e}")
+                got = None
+            for symbol, bars in (got or {}).items():
+                if bars:
+                    cached[symbol] = bars
+
+        return {s: cached[s] for s in symbols if s in cached}
 
     def _fetch_history_baostock_batch(
         self, symbols: list[str], start_date: str, end_date: str
