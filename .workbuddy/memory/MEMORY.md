@@ -27,10 +27,23 @@
   - 首屏市场环境：后台刷新 + 120s 计算上界 + 指数退避，首屏只读缓存，绝不等待。
   - 数据源探测：15s 上界，超时回落 `MockDataProvider`。**预算不要给太紧**——误回落 mock 会写入虚构价格，比多等几秒严重。
 - **lifespan 里的非必需装配（调度器等）一律包 `try/except`**：任何可选功能出问题都不允许阻断 web 启动。
-- **不要在可能阻塞的调用外面替换全局 `sys.stdout`**：一旦挂死，重定向永久生效，进程日志整段静音，线上无法排障。
+- **不要在可能阻塞的调用外面替换全局 `sys.stdout`**：一旦挂死，重定向永久生效，进程日志整段静音，线上无法排障。要压第三方库噪声，用常驻**行过滤器**（见 `data/baostock_utils.py:install_quiet_stdout()`）。
+- **数据页上的网络等待用"缓存 + 墙钟预算"解决**，不要为了快而牺牲数据正确性。参考 `fundamentals._try_baostock`：按 symbol 缓存（含**负缓存**）+ `budget` 上限 + 命中缓存时不登录。
+
+## 数据源接入约定
+- **所有 baostock 登录必须走 `src/data/baostock_utils.py:open_bs()/close_bs()`**，禁止裸调 `bs.login()`。它带超时 + 熔断（不可用时立即返回 `None`），是唯一能防止进程被永久挂起拖死的入口。
+- **历史日线走 HTTP 多源**（`src/data/kline_http.py`）：新浪 KLine → 腾讯 fqkline → baostock 兜底。新浪与 baostock(adjustflag=2) 口径逐项一致；腾讯成交量单位是「手」，需 ×100。
+- **日期一律在边界归一化**：用 `runtime.normalize_date()`。只要有一处用字符串比较日期区间，传入紧凑格式 `YYYYMMDD` 就会**静默失数**（`"20240101" <= "2024-01-02"` 因 ASCII 顺序恒为 False），且 baostock 会判非法日期——两端都不抛异常，极难定位。回归测试见 `tests/test_data/test_dates.py`。
 
 ## 部署环境实测事实（PocketBay）
-- 平台会注入 `PORT`，但**本轮未注入 `POCKETBAY_DATA_DIR` / `DATABASE_URL`** → 可写目录回落容器内应用目录，**不跨版本保留**；`PORT` 已用作"是否在平台运行"的判据（`web/main.py` 启用进程内调度）。
+- 平台会注入 `PORT`，但**未注入 `POCKETBAY_DATA_DIR` / `DATABASE_URL`** → 可写目录回落容器内应用目录，**不跨版本保留**；`PORT` 已用作"是否在平台运行"的判据（`web/main.py` 启用进程内调度）。
 - **仓库整包会上传**（只排除 `.git`/`node_modules`/构建产物）：本地 `data/simulation.db` 会随包上云，线上首屏带着本地历史；反之线上交易不在持久卷上，重部署可能被包内旧库覆盖。
-- **沙箱访问不到大陆行情端点**（实测 `/api/health` 三个源全 false）→ 线上形态是"看板 + 历史数据"可用，实时行情/自动交易/选股不可用。要行情可用需部署到能访问大陆行情的机器。
-- 线上地址：<https://aitrader-dashboard.app.workbuddy.host/>
+- **沙箱网络：TCP 层探测不可信**（透明代理让任何主机 1ms「连上」），必须用 HTTP 层探测真实响应体（`GET /api/diag`）。
+  - **可用**：`hq.sinajs.cn` 实时行情（200/14ms）、`quotes.sina.cn` KLine（200/249ms）、`ifzq.gtimg.cn` 腾讯 fqkline（200/288ms）。
+  - **不可用**：baostock（永久挂起，不是快速失败）、网易历史日线（502）、东方财富（RemoteDisconnected）、Yahoo（TLS 被断）。
+  - 结论：**实时行情 + 历史日线在线上可正常获取**；baostock 派生的 PE/PB、分红、公告按"离线"优雅降级。
+- 线上地址：<https://aitrader-dashboard.app.workbuddy.host/>（appId `wbapp_…`、`sandboxId=d682aa28e8414c3a973768af2c73f16b`、cmd `language=python` / `port=8000` / `startCmd=python web.py`）。
+  - 注意：该目录默认 startCmd 探测会找 `main.py` 而报 `No such file or directory` —— 必须显式传 `startCmd`。
+
+## 验证线上页面时的坑
+- **`WebFetch` 有 15 分钟自缓存**：验证部署后刷新必须加 `?_ts=N` 破缓存，否则会把"旧快照"误判成"改动没生效"（本项目误判过一次首页『行情加载中』）。

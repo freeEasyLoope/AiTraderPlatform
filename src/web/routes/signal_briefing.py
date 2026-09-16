@@ -28,17 +28,11 @@ def _get_watchlist_market() -> dict:
 
     market = {}
     try:
-        from urllib.request import Request as UReq, urlopen
         from ...data.provider import MarketSnapshot
+        from ...data.realtime_http import fetch_sina_format
 
-        sina_syms = []
-        for s in symbols:
-            p = "sh" if s.startswith(("5", "6", "9")) else "sz"
-            sina_syms.append(f"{p}{s}")
-        url = "http://hq.sinajs.cn/list=" + ",".join(sina_syms)
-        req = UReq(url, headers={"Referer": "https://finance.sina.com.cn"})
-        with urlopen(req, timeout=5) as resp:
-            raw = resp.read().decode("gbk", errors="replace")
+        # 多源链：腾讯优先、失败回落新浪；见 data/realtime_http.py
+        raw = fetch_sina_format(symbols)
         for line in raw.strip().split("\n"):
             m = re.match(r'var hq_str_(\w+)="(.+)"', line.strip())
             if m:

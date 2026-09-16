@@ -32,16 +32,12 @@ async def api_analyze_stock(symbol: str):
     names = _get_wl_names()
     name = names.get(symbol, symbol)
 
-    # 快速行情
+    # 快速行情（多源链：腾讯优先、失败回落新浪；见 data/realtime_http.py）
     price_info = {}
     try:
-        from urllib.request import Request as UReq, urlopen
+        from ...data.realtime_http import fetch_sina_format
         import re
-        prefix = "sh" if symbol.startswith(("5", "6", "9")) else "sz"
-        req = UReq(f"http://hq.sinajs.cn/list={prefix}{symbol}",
-                   headers={"Referer": "https://finance.sina.com.cn"})
-        with urlopen(req, timeout=5) as resp:
-            raw = resp.read().decode("gbk", errors="replace")
+        raw = fetch_sina_format([symbol])
         m = re.search(r'"(.+)"', raw)
         if m:
             parts = m.group(1).split(",")

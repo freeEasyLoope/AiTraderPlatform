@@ -296,13 +296,10 @@ def api_stock_detail(symbol: str):
 
     price = None
     try:
-        from urllib.request import Request as UReq, urlopen
         import re
-        prefix = "sh" if symbol.startswith(("5", "6", "9")) else "sz"
-        req = UReq(f"http://hq.sinajs.cn/list={prefix}{symbol}",
-                   headers={"Referer": "https://finance.sina.com.cn"})
-        with urlopen(req, timeout=5) as resp:
-            raw = resp.read().decode("gbk", errors="replace")
+        from ...data.realtime_http import fetch_sina_format
+        # 多源链：腾讯优先、失败回落新浪；见 data/realtime_http.py
+        raw = fetch_sina_format([symbol])
         m = re.search(r'"(.+)"', raw)
         if m:
             parts = m.group(1).split(",")
@@ -362,15 +359,10 @@ def trader_detail(request: Request, trader_id: int):
     positions = repo.get_positions(t.id)
     if positions:
         try:
-            from urllib.request import Request as UReq, urlopen
             import re
-            from ...data.sina_client import _sina_symbol
-            p_symbols = [p.symbol for p in positions]
-            sina_syms = [_sina_symbol(s) for s in p_symbols]
-            url = "http://hq.sinajs.cn/list=" + ",".join(sina_syms)
-            req = UReq(url, headers={"Referer": "https://finance.sina.com.cn"})
-            with urlopen(req, timeout=5) as resp:
-                raw = resp.read().decode("gbk", errors="replace")
+            from ...data.realtime_http import fetch_sina_format
+            # 多源链：腾讯优先、失败回落新浪；见 data/realtime_http.py
+            raw = fetch_sina_format([p.symbol for p in positions])
             for line in raw.strip().split("\n"):
                 m = re.match(r'var hq_str_(\w+)="(.+)"', line.strip())
                 if m:
@@ -439,13 +431,10 @@ def stock_detail(request: Request, symbol: str):
     # 快速行情
     price = None
     try:
-        from urllib.request import Request as UReq, urlopen
         import re
-        prefix = "sh" if symbol.startswith(("5", "6", "9")) else "sz"
-        req = UReq(f"http://hq.sinajs.cn/list={prefix}{symbol}",
-                   headers={"Referer": "https://finance.sina.com.cn"})
-        with urlopen(req, timeout=5) as resp:
-            raw = resp.read().decode("gbk", errors="replace")
+        from ...data.realtime_http import fetch_sina_format
+        # 多源链：腾讯优先、失败回落新浪；见 data/realtime_http.py
+        raw = fetch_sina_format([symbol])
         m = re.search(r'"(.+)"', raw)
         if m:
             parts = m.group(1).split(",")

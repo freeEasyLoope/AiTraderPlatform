@@ -44,15 +44,10 @@ async def risk_lab(request: Request):
     live_prices = {}
     if all_positions:
         try:
-            from urllib.request import Request as UReq, urlopen
             import re
-            from ...data.sina_client import _sina_symbol
-            syms = list(all_positions.keys())
-            sina_syms = [_sina_symbol(s) for s in syms]
-            url = "http://hq.sinajs.cn/list=" + ",".join(sina_syms)
-            req = UReq(url, headers={"Referer": "https://finance.sina.com.cn"})
-            with urlopen(req, timeout=5) as resp:
-                raw = resp.read().decode("gbk", errors="replace")
+            from ...data.realtime_http import fetch_sina_format
+            # 多源链：腾讯优先、失败回落新浪；见 data/realtime_http.py
+            raw = fetch_sina_format(list(all_positions.keys()))
             for line in raw.strip().split("\n"):
                 m = re.match(r'var hq_str_(\w+)="(.+)"', line.strip())
                 if m:
@@ -135,15 +130,10 @@ async def api_simulate_scenario(request: Request):
     live_prices = {}
     if all_positions:
         try:
-            from urllib.request import Request as UReq, urlopen
             import re
-            from ...data.sina_client import _sina_symbol
-            syms = list(all_positions.keys())
-            sina_syms = [_sina_symbol(s) for s in syms]
-            url = "http://hq.sinajs.cn/list=" + ",".join(sina_syms)
-            req = UReq(url, headers={"Referer": "https://finance.sina.com.cn"})
-            with urlopen(req, timeout=5) as resp:
-                raw = resp.read().decode("gbk", errors="replace")
+            from ...data.realtime_http import fetch_sina_format
+            # 多源链：腾讯优先、失败回落新浪；见 data/realtime_http.py
+            raw = fetch_sina_format(list(all_positions.keys()))
             for line in raw.strip().split("\n"):
                 m = re.match(r'var hq_str_(\w+)="(.+)"', line.strip())
                 if m:

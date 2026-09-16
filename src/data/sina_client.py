@@ -18,7 +18,13 @@ from typing import Optional
 from urllib import request
 
 from .provider import MarketDataProvider, MarketSnapshot
-from ..runtime import normalize_date, run_with_timeout
+from ..runtime import (
+    mark_source_down,
+    mark_source_up,
+    normalize_date,
+    run_with_timeout,
+    source_available,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +59,28 @@ def _sina_symbol(symbol: str) -> str:
     if symbol.startswith("688"):
         prefix = "sh"
     return f"{prefix}{symbol}"
+
+
+# 实时行情熔断标识：新浪被拒后进入冷却，避免每批次都白等一个超时周期
+SINA_REALTIME_SOURCE = "sina_realtime"
+_SINA_REALTIME_TIMEOUT = 10.0
+
+
+def fetch_sina_raw(symbols: list[str], timeout: float = _SINA_REALTIME_TIMEOUT) -> str:
+    """新浪实时行情原始文本（不做缓存/熔断）。
+
+    抽成模块函数是为了让 `realtime_http` 在多源全部失败时能回落它，
+    而无需复制一份请求逻辑。
+    """
+    sina_symbols = [_sina_symbol(s) for s in symbols]
+    url = "http://hq.sinajs.cn/list=" + ",".join(sina_symbols)
+    req = request.Request(url, headers={
+        "Referer": "https://finance.sina.com.cn",
+        "User-Agent": "Mozilla/5.0",
+    })
+    with request.urlopen(req, timeout=timeout) as resp:
+        # 新浪返回 gbk 编码
+        return resp.read().decode("gbk", errors="replace")
 
 
 class SinaClient(MarketDataProvider):
@@ -194,20 +222,26 @@ class SinaClient(MarketDataProvider):
                         break
 
     def _fetch_batch(self, symbols: list[str]) -> dict[str, MarketSnapshot]:
-        """请求一批股票数据。"""
-        sina_symbols = [_sina_symbol(s) for s in symbols]
-        url = "http://hq.sinajs.cn/list=" + ",".join(sina_symbols)
+        """请求一批实时行情：新浪优先，不可用时切 HTTP 多源链。
 
-        req = request.Request(url, headers={
-            "Referer": "https://finance.sina.com.cn",
-            "User-Agent": "Mozilla/5.0",
-        })
+        新浪 `hq.sinajs.cn` 在部分托管节点会被拒（实测 PocketBay 节点 403 / 连接超时），
+        同一台机器上 `quotes.sina.cn` 的 KLine 却是通的。它**不是快速失败**——
+        每次都要白等一个超时周期，所以失败后进熔断冷却，后续批次直接走腾讯源。
+        """
+        if source_available(SINA_REALTIME_SOURCE):
+            try:
+                raw = fetch_sina_raw(symbols)
+                parsed = self._parse_response(raw, symbols)
+                if parsed:
+                    mark_source_up(SINA_REALTIME_SOURCE)
+                    return parsed
+                logger.warning("新浪实时行情返回空数据，切换 HTTP 多源链")
+            except Exception as e:
+                logger.error(f"批次实时行情请求失败: {e}")
+            mark_source_down(SINA_REALTIME_SOURCE)
 
-        with request.urlopen(req, timeout=10) as resp:
-            # 新浪返回 gbk 编码
-            raw = resp.read().decode("gbk", errors="replace")
-
-        return self._parse_response(raw, symbols)
+        from .realtime_http import fetch_realtime
+        return fetch_realtime(symbols)
 
     def _parse_response(
         self, raw: str, symbols: list[str]

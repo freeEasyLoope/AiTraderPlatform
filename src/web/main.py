@@ -162,12 +162,22 @@ def api_health():
     if cached is not None and now - _health_cache["ts"] < _HEALTH_TTL_SECONDS:
         return cached
 
-    health = {"sina": False, "baostock": False, "tushare": False}
+    health = {"sina": False, "realtime": False, "baostock": False, "tushare": False}
     from ..runtime import run_with_timeout
 
     def _probe_sina() -> bool:
-        from ..data.sina_client import SinaClient
-        snap = SinaClient().get_snapshot("600519")
+        """纯新浪实时行情是否可用（已被熔断则直接判否，不再白等超时）。"""
+        from ..data.sina_client import SINA_REALTIME_SOURCE, fetch_sina_raw
+        from ..runtime import source_available
+        if not source_available(SINA_REALTIME_SOURCE):
+            return False
+        raw = fetch_sina_raw(["600519"], timeout=8.0)
+        return "hq_str_sh600519=" in raw and 'hq_str_sh600519=""' not in raw
+
+    def _probe_realtime() -> bool:
+        """实时行情链（腾讯优先、新浪兜底）是否拿得到真实价。"""
+        from ..data.realtime_http import fetch_realtime
+        snap = fetch_realtime(["600519"]).get("600519")
         return snap is not None and snap.close > 0
 
     def _probe_baostock() -> bool:
@@ -178,10 +188,14 @@ def api_health():
         close_bs(bs)
         return True
 
-    # 两个数据源都不接受超时参数（baostock 不可达时可阻塞 80s+），统一设界，
+    # 数据源都不接受超时参数（baostock 不可达时可阻塞 80s+），统一设界，
     # 否则探活请求会一直挂着——单进程容器里足以让平台判定服务不可用。
     try:
         health["sina"] = bool(run_with_timeout(_probe_sina, 10, False))
+    except Exception:
+        pass
+    try:
+        health["realtime"] = bool(run_with_timeout(_probe_realtime, 20, False))
     except Exception:
         pass
     try:
@@ -215,6 +229,8 @@ def api_stock_news(symbol: str, days: int = 5):
 _DIAG_TARGETS = [
     ("example.com", 443, "国际站点基线（验证出网是否可用）"),
     ("hq.sinajs.cn", 80, "新浪实时行情"),
+    ("qt.gtimg.cn", 443, "腾讯实时行情（实时主源）"),
+    ("web.ifzq.gtimg.cn", 443, "腾讯 ifzq（实时备源/日线备源）"),
     ("quotes.money.163.com", 80, "网易历史日线"),
     ("push2his.eastmoney.com", 443, "东方财富（akshare 路径）"),
     ("public-api.baostock.com", 10030, "baostock 服务端口（真实端点）"),
@@ -228,6 +244,10 @@ _DIAG_HTTP = [
     ("https://example.com", dict(_UA), "出网基线（有响应体=沙箱能出网）"),
     ("http://hq.sinajs.cn/list=sh600519",
      {**_UA, "Referer": "https://finance.sina.com.cn"}, "新浪实时行情（应返回 hq_str_sh600519=…）"),
+    ("https://qt.gtimg.cn/q=sh600519",
+     {**_UA, "Referer": "https://gu.qq.com/"}, "腾讯实时行情（应返回 v_sh600519=…，实时主源）"),
+    ("https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=sh600519",
+     {**_UA, "Referer": "https://gu.qq.com/"}, "腾讯 ifzq 实时（实时备源）"),
     ("http://quotes.money.163.com/service/chddata.html"
      "?code=0600519&start=20260901&end=20260916&fields=TCLOSE", dict(_UA), "网易历史日线"),
     ("https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData"
