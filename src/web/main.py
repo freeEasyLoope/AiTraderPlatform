@@ -49,9 +49,12 @@ async def lifespan(app: FastAPI):
 
     scheduler = None
     sched_cfg = settings.get("scheduler", {}) or {}
+    # 托管平台会注入 PORT（本地跑 web.py 不设 PORT），这是最可靠的「已在平台运行」信号：
+    # 平台不提供 cron，定时交易只能在 web 进程内跑。
+    deployed = bool(os.environ.get("PORT")) or is_managed_env()
     want_scheduler = (
         os.environ.get("AITRADER_DISABLE_SCHEDULER") != "1"
-        and (bool(sched_cfg.get("run_in_web")) or is_managed_env())
+        and (bool(sched_cfg.get("run_in_web")) or deployed)
     )
     if want_scheduler:
         from ..analysis.llm_reporter import LLMReporter
@@ -155,23 +158,29 @@ def api_health():
         return cached
 
     health = {"sina": False, "baostock": False, "tushare": False}
-    try:
+    from ..runtime import run_with_timeout
+
+    def _probe_sina() -> bool:
         from ..data.sina_client import SinaClient
         snap = SinaClient().get_snapshot("600519")
-        health["sina"] = snap is not None and snap.close > 0
+        return snap is not None and snap.close > 0
+
+    def _probe_baostock() -> bool:
+        import baostock as bs
+        lg = bs.login()
+        ok = lg.error_code == "0"
+        if ok:
+            bs.logout()
+        return ok
+
+    # 两个数据源都不接受超时参数（baostock 不可达时可阻塞 80s+），统一设界，
+    # 否则探活请求会一直挂着——单进程容器里足以让平台判定服务不可用。
+    try:
+        health["sina"] = bool(run_with_timeout(_probe_sina, 10, False))
     except Exception:
         pass
     try:
-        import baostock as bs
-        import io, sys
-        old, sys.stdout = sys.stdout, io.StringIO()
-        lg = bs.login()
-        sys.stdout = old
-        health["baostock"] = lg.error_code == "0"
-        if health["baostock"]:
-            sys.stdout = io.StringIO()
-            bs.logout()
-            sys.stdout = old
+        health["baostock"] = bool(run_with_timeout(_probe_baostock, 8, False))
     except Exception:
         pass
     try:

@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import threading
 import time
 from pathlib import Path
 
@@ -120,3 +121,29 @@ def setup_logging(level: str = "INFO") -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         force=True,
     )
+
+
+def run_with_timeout(fn, timeout: float, default=None):
+    """在守护线程里执行 fn，超过 timeout 秒即放弃等待并返回 default。
+
+    用于第三方数据源（baostock 等）不提供超时参数、网络不可达时可能无限阻塞的场景。
+    超时的线程无法被强杀，会自行退出；调用方拿到 default 继续，不阻塞请求。
+    """
+    box: dict = {}
+
+    def _target() -> None:
+        try:
+            box["value"] = fn()
+        except BaseException as e:  # noqa: BLE001 - 第三方库异常类型不可控
+            box["error"] = e
+
+    name = getattr(fn, "__name__", "call")
+    worker = threading.Thread(target=_target, name=f"timeout-{name}", daemon=True)
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive():
+        logger.warning("%s 超过 %.0fs 未返回，已放弃等待", name, timeout)
+        return default
+    if "error" in box:
+        raise box["error"]
+    return box.get("value", default)

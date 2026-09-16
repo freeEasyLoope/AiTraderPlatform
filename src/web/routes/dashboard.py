@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import logging
+import threading
+import time
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Request
@@ -11,11 +14,13 @@ from fastapi.responses import HTMLResponse
 from ..deps import repo, templates, build_symbol_names
 from ...config import load_traders, load_settings
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 
-def _calc_market_env() -> dict:
-    """计算市场环境——基于沪深300ETF的历史数据判断牛/熊/震荡。"""
+def _compute_market_env() -> dict:
+    """同步计算市场环境——会阻塞在 baostock 上，只允许后台线程调用。"""
     try:
         from ...data.sina_client import SinaClient
         end = datetime.now().strftime("%Y-%m-%d")
@@ -23,7 +28,8 @@ def _calc_market_env() -> dict:
         snaps = SinaClient().get_historical_data(["510300"], start, end).get("510300", [])
         if len(snaps) < 40:
             return {"status": "unknown", "label": "数据不足", "needle_pos": 50,
-                    "trend": "?", "volatility": "?", "desc": "需要至少40个交易日数据"}
+                    "trend": "?", "volatility": "?", "index_price": 0.0,
+                    "desc": "需要至少40个交易日数据"}
 
         closes = [s.close for s in snaps]
         current = closes[-1]
@@ -65,7 +71,79 @@ def _calc_market_env() -> dict:
         }
     except Exception:
         return {"status": "unknown", "label": "行情离线", "needle_pos": 50,
-                "trend": "?", "volatility": "?", "desc": "无法获取指数数据，请检查数据源连接"}
+                "trend": "?", "volatility": "?", "index_price": 0.0,
+                "desc": "无法获取指数数据，请检查数据源连接"}
+
+
+# ── 市场环境缓存 ──
+# 首屏绝不能等数据源：baostock 在境外/受限网络下无超时且会长时间阻塞，
+# 同步等待会让平台探活 60s 超时。改为「先返回缓存，后台刷新」。
+_MARKET_ENV_TTL = 600.0        # 成功结果缓存 10 分钟
+_MARKET_ENV_RETRY = 60.0       # 无数据时最快 60 秒重试一次
+_MARKET_ENV_DEADLINE = 180.0   # 后台刷新超时该时长视为卡死，允许重开
+_MARKET_ENV_PLACEHOLDER = {
+    "status": "unknown", "label": "行情加载中", "needle_pos": 50,
+    "trend": "?", "volatility": "?", "index_price": 0.0,
+    "desc": "正在后台获取指数数据…",
+}
+_market_env_state: dict = {
+    "data": None, "ts": 0.0, "attempt_ts": 0.0, "refreshing": False, "token": None,
+}
+_market_env_guard = threading.Lock()
+
+
+def _refresh_market_env() -> None:
+    """触发一次后台刷新（单飞 + 死锁看门狗）。任何情况下都不阻塞调用方。"""
+    now = time.time()
+    with _market_env_guard:
+        refreshing = _market_env_state["refreshing"]
+        started_at = _market_env_state["attempt_ts"]
+        has_data = _market_env_state["data"] is not None
+
+        if refreshing and now - started_at < _MARKET_ENV_DEADLINE:
+            return
+        if refreshing:
+            logger.warning("上次市场环境刷新超过 %.0fs 未返回，重开一次", _MARKET_ENV_DEADLINE)
+        elif not has_data and now - started_at < _MARKET_ENV_RETRY:
+            return
+
+        token = object()
+        _market_env_state["refreshing"] = True
+        _market_env_state["attempt_ts"] = now
+        _market_env_state["token"] = token
+
+    def _work() -> None:
+        try:
+            data = _compute_market_env()
+            if data.get("status") in ("bull", "bear", "sideways"):
+                with _market_env_guard:
+                    _market_env_state["data"] = data
+                    _market_env_state["ts"] = time.time()
+                logger.info("市场环境已刷新: %s", data.get("label"))
+            else:
+                logger.info("市场环境暂不可用: %s", data.get("desc"))
+        except Exception:
+            logger.exception("市场环境后台刷新异常")
+        finally:
+            with _market_env_guard:
+                if _market_env_state["token"] is token:
+                    _market_env_state["refreshing"] = False
+
+    threading.Thread(target=_work, name="market-env", daemon=True).start()
+
+
+def get_market_env() -> dict:
+    """首屏用市场环境——立即返回，绝不等待数据源。"""
+    now = time.time()
+    with _market_env_guard:
+        data = _market_env_state["data"]
+        ts = _market_env_state["ts"]
+
+    if data is not None and now - ts < _MARKET_ENV_TTL:
+        return data
+
+    _refresh_market_env()
+    return data if data is not None else dict(_MARKET_ENV_PLACEHOLDER)
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -82,8 +160,8 @@ def dashboard(request: Request, group: str = ""):
     long_capital = sim["long_capital"]
     total_capital = short_capital + long_capital
 
-    # 市场环境
-    market_env = _calc_market_env()
+    # 市场环境（走缓存，不阻塞首屏）
+    market_env = get_market_env()
 
     # 按组分类
     short_traders = []

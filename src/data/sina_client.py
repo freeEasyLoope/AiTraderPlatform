@@ -310,18 +310,13 @@ class SinaClient(MarketDataProvider):
     ) -> dict[str, list[MarketSnapshot]]:
         """批量获取 baostock 历史日线（一次登录）。"""
         import baostock as bs
-        import io
-        import sys
 
         result: dict[str, list[MarketSnapshot]] = {}
 
-        # 抑制 baostock 的 stdout 噪音
-        old_stdout = sys.stdout
-        sys.stdout = io.StringIO()
-        try:
-            lg = bs.login()
-        finally:
-            sys.stdout = old_stdout
+        # 不替换全局 sys.stdout：数据源不可达时 bs.login() 会长时间阻塞，
+        # 此时若 stdout 已被换成 StringIO，进程日志会永久静音，线上无法排障。
+        # baostock 的 "login success!" 噪音可接受。
+        lg = bs.login()
 
         if lg.error_code != "0":
             logger.warning(f"baostock 登录失败: {lg.error_msg}")
