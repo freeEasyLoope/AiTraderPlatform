@@ -79,7 +79,8 @@ def _compute_market_env() -> dict:
 # 首屏绝不能等数据源：baostock 在境外/受限网络下无超时且会长时间阻塞，
 # 同步等待会让平台探活 60s 超时。改为「先返回缓存，后台刷新」。
 _MARKET_ENV_TTL = 600.0        # 成功结果缓存 10 分钟
-_MARKET_ENV_RETRY = 60.0       # 无数据时最快 60 秒重试一次
+_MARKET_ENV_RETRY = 30.0       # 失败后的首次重试间隔
+_MARKET_ENV_RETRY_MAX = 1800.0  # 退避上限 30 分钟（数据源长期不可达时避免反复挂线程）
 _MARKET_ENV_DEADLINE = 180.0   # 后台刷新超时该时长视为卡死，允许重开
 _MARKET_ENV_PLACEHOLDER = {
     "status": "unknown", "label": "行情加载中", "needle_pos": 50,
@@ -87,25 +88,30 @@ _MARKET_ENV_PLACEHOLDER = {
     "desc": "正在后台获取指数数据…",
 }
 _market_env_state: dict = {
-    "data": None, "ts": 0.0, "attempt_ts": 0.0, "refreshing": False, "token": None,
+    "data": None, "ts": 0.0, "last": None,
+    "attempt_ts": 0.0, "fails": 0, "refreshing": False, "token": None,
 }
 _market_env_guard = threading.Lock()
 
 
 def _refresh_market_env() -> None:
-    """触发一次后台刷新（单飞 + 死锁看门狗）。任何情况下都不阻塞调用方。"""
+    """触发一次后台刷新（单飞 + 失败退避 + 卡死看门狗）。任何情况下都不阻塞调用方。"""
     now = time.time()
     with _market_env_guard:
         refreshing = _market_env_state["refreshing"]
         started_at = _market_env_state["attempt_ts"]
-        has_data = _market_env_state["data"] is not None
+        fails = _market_env_state["fails"]
 
         if refreshing and now - started_at < _MARKET_ENV_DEADLINE:
             return
         if refreshing:
             logger.warning("上次市场环境刷新超过 %.0fs 未返回，重开一次", _MARKET_ENV_DEADLINE)
-        elif not has_data and now - started_at < _MARKET_ENV_RETRY:
-            return
+        elif _market_env_state["data"] is None:
+            delay = 0.0 if fails == 0 else min(
+                _MARKET_ENV_RETRY * (2 ** (fails - 1)), _MARKET_ENV_RETRY_MAX
+            )
+            if now - started_at < delay:
+                return
 
         token = object()
         _market_env_state["refreshing"] = True
@@ -115,15 +121,24 @@ def _refresh_market_env() -> None:
     def _work() -> None:
         try:
             data = _compute_market_env()
-            if data.get("status") in ("bull", "bear", "sideways"):
-                with _market_env_guard:
+            ok = data.get("status") in ("bull", "bear", "sideways")
+            with _market_env_guard:
+                # 失败结果也记下来，页面才能如实显示「行情离线」而不是永远「加载中」
+                _market_env_state["last"] = data
+                if ok:
                     _market_env_state["data"] = data
                     _market_env_state["ts"] = time.time()
+                    _market_env_state["fails"] = 0
+                else:
+                    _market_env_state["fails"] += 1
+            if ok:
                 logger.info("市场环境已刷新: %s", data.get("label"))
             else:
-                logger.info("市场环境暂不可用: %s", data.get("desc"))
+                logger.warning("市场环境不可用: %s", data.get("desc"))
         except Exception:
             logger.exception("市场环境后台刷新异常")
+            with _market_env_guard:
+                _market_env_state["fails"] += 1
         finally:
             with _market_env_guard:
                 if _market_env_state["token"] is token:
@@ -138,12 +153,15 @@ def get_market_env() -> dict:
     with _market_env_guard:
         data = _market_env_state["data"]
         ts = _market_env_state["ts"]
+        last = _market_env_state["last"]
 
     if data is not None and now - ts < _MARKET_ENV_TTL:
         return data
 
     _refresh_market_env()
-    return data if data is not None else dict(_MARKET_ENV_PLACEHOLDER)
+    if data is not None:
+        return data
+    return last if last is not None else dict(_MARKET_ENV_PLACEHOLDER)
 
 
 @router.get("/", response_class=HTMLResponse)

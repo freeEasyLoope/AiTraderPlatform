@@ -141,20 +141,24 @@ crontab -e
 
 # 方式二：PocketBay 托管部署
 
-平台把仓库根目录整包识别成一个应用，产出 `https://<slug>.pocketbay.app`。
+平台把仓库根目录整包识别成一个应用，产出 `https://<slug>.app.workbuddy.host`。
 **前端不用改**：所有接口都是相对路径，同域名同源。
+
+当前线上地址：<https://aitrader-dashboard.app.workbuddy.host/>
 
 ## 1. 已做的适配（代码侧）
 
 | 适配点 | 实现 |
 |---|---|
 | 监听端口 | `web.py` 读 `PORT` 并绑定 `0.0.0.0` |
-| 可写目录 | `src/runtime.py` 统一解析：平台注入 `POCKETBAY_DATA_DIR=/data` 时全部读写落到持久卷，本地回落仓库根 |
+| 可写目录 | `src/runtime.py` 统一解析：平台注入 `POCKETBAY_DATA_DIR=/data` 时全部读写落到持久卷，未注入则回落应用目录（容器层，**不跨版本保留**） |
 | 配置播种 | `config/traders.yaml`、`watchlist.yaml` 首次运行自动复制到可写目录（页面会改它们） |
-| 数据库 | SQLite 落 `$POCKETBAY_DATA_DIR/data/simulation.db`；若平台注入 `DATABASE_URL` 则自动改用托管库 |
+| 数据库 | SQLite 落 `<可写目录>/data/simulation.db`；若平台注入 `DATABASE_URL` 且驱动已装则优先；驱动缺失自动回退 SQLite（不会因连接串致整站起不来） |
 | 首启自举 | `web/main.py` 的 `lifespan` 建表 + 创建 6 个操盘手账户，避免首屏空看板 |
-| 定时交易 | 平台没有 cron，托管环境下由 web 进程内的 APScheduler 调度（时区 `Asia/Shanghai`） |
-| 事件循环 | 首屏与探活路径的处理器改成同步 `def`，阻塞行情拉取走线程池，不冻结单进程服务 |
+| 定时交易 | 平台没有 cron，检测到部署信号时由 web 进程内 APScheduler 调度（时区 `Asia/Shanghai`） |
+| 首屏不阻塞 | 市场环境改为「先返回缓存/占位 + 后台刷新」（10 分钟 TTL、单飞、失败指数退避、180s 卡死看门狗）。**这是部署能否成功的关键**——详见第 6 节 |
+| 事件循环 | 首屏与探活路径的处理器改同步 `def`，阻塞行情拉取走线程池，不冻结单进程服务 |
+| 数据源设界 | 对不接受超时参数的第三方数据源（baostock）用 `runtime.run_with_timeout` 兜底 |
 
 ## 2. 部署方式
 
@@ -168,8 +172,8 @@ crontab -e
 
 | 变量 | 谁注入 | 说明 |
 |---|---|---|
-| `PORT` | 平台 | 必须监听它 |
-| `POCKETBAY_DATA_DIR` | 平台 | 持久卷路径，跨版本保留；也是"是否启用进程内调度"的判据 |
+| `PORT` | 平台 | 必须监听它；同时作为「是否启用进程内调度」的部署判据（沙箱实测**未**注入 `POCKETBAY_DATA_DIR`） |
+| `POCKETBAY_DATA_DIR` | 平台 | 持久卷路径，跨版本保留；注入时同样启用进程内调度 |
 | `TZ` | 本代码 | 默认置 `Asia/Shanghai`，否则容器 UTC 会让交易日错一天 |
 | `DATABASE_URL` | 平台 | 选了托管 PostgreSQL 时优先使用（需自行加 `psycopg2-binary`） |
 | `AITRADER_DISABLE_SCHEDULER` | 手动 | 置 `1` 强制关闭进程内调度 |
@@ -185,6 +189,35 @@ crontab -e
 ## 5. 上线后注意事项
 
 - **保持单进程**：启动命令不要加 `--workers`，否则每个 worker 各起一个调度器，会重复下单。
-- **数据源地域**：`hq.sinajs.cn`、baostock、akshare 都是中国大陆端点。若运行节点在境外，`/recommendations`、`/signals`、首页市场环境判断会变慢或超时；`/api/health` 已有 5 分钟缓存兜底。
-- **本地 SQLite 不会自动带上云**：线上从零开始跑模拟。要延续本地记录，需在配对页选择把数据迁到托管 PostgreSQL。
+- **本地 SQLite 会被打进包**：平台压缩的是仓库整包（只排除 `.git`/`node_modules`/构建产物），`data/simulation.db` 会一起上传，所以线上首屏带着本地的持仓与净值历史（实测如此）。反过来，**线上产生的交易不在持久卷上，重新部署可能被包内旧库覆盖**；要真正保留线上状态，需申请挂持久卷或改用托管数据库。
 - `config/*.yaml` 是"页面可改的运行时配置"，不要把它们当作敏感配置在配对页申报——那会变成只读挂载，策略调参/自选池增删会写不进去。
+
+## 6. 实测记录与已知限制（2026-09-16）
+
+首次部署**失败**，报错 `service did not become reachable on port 8000 within 60s`。日志显示应用其实已正常启动（`Uvicorn running on http://0.0.0.0:8000`、端口 LISTEN 正常），是**探活请求拿不到响应**。根因：
+
+> `GET /` 同步调用 `_calc_market_env()` → `baostock`，而 `bs.login()` **没有超时参数**，在访问不到中国行情端点的沙箱里会长时间阻塞（本机复现单次 80s+），单进程容器因此被判定为不可用。
+
+修复后同一路径本机实测 **80s+ → 0.07s**（详见第 1 节「首屏不阻塞」）。教训值得记住两条：
+
+1. **凡是被平台探活路径覆盖的端点，绝不能有不受控的网络等待**——不是"慢"，而是直接判定部署失败。
+2. **不要在会自动重定向/阻塞的调用外面替换全局 `sys.stdout`**。原 `bs.login()` 外包了 `sys.stdout = io.StringIO()`，一旦登录挂死，这个全局重定向就永久生效，进程日志整段静音，线上反而看不到真正原因。相关替换已从 `src/data/sina_client.py` 移除。
+
+### 沙箱网络限制（重要）
+
+线上实例实测 `GET /api/health` 返回：
+
+```json
+{"sina": false, "baostock": false, "tushare": false}
+```
+
+三个数据源**全部不可达**。影响面：
+
+| 功能 | 线上表现 |
+|---|---|
+| 页面渲染、6 位操盘手、净值/排名/收益曲线 | ✅ 正常（数据来自包内 SQLite） |
+| 配置读写（策略调参、自选池增删） | ✅ 正常 |
+| 市场环境横条 | ⚠️ 显示「行情离线」（已如实降级，不再永远卡在「加载中」） |
+| 每日自动交易、`/recommendations`、`/signals`、条件选股 | ❌ 拿不到行情，无法产生新信号 |
+
+如果需要一个**行情可用**的实例，把同一份代码部署到能访问大陆行情的机器上即可（见方式一）；本仓库的 `src/runtime.py` 让两处环境跑同一套代码，无需改动。
