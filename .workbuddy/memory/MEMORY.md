@@ -13,6 +13,12 @@
 - 测试与未使用依赖放 `requirements-dev.txt`，不要混进生产清单（构建时长）。
 - 注意：`fastapi` 核心不带 `jinja2`，用了 `Jinja2Templates` 就必须显式声明。
 
+## 代码托管
+- 远端 `origin` = <https://github.com/freeEasyLoope/AiTraderPlatform.git>，主分支 `main`。
+- 本机 `credential.helper=manager`（Windows 凭据管理器）已缓存凭据。
+  需要非交互推送时加 `GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never`，避免挂死等输入。
+- **该仓库是公开仓库**：任何提交前都要确认不含真实密钥（只允许引用环境变量名与占位符）。
+
 ## 部署目标（两个平台，别混用）
 - **PocketBay**（`*.pocketbay.app`）—— 用用户级技能 `~/.workbuddy/skills/pocketbay-deploy/`，走官方 HTTP 协议 + 配对页。
 - **WorkBuddy App 发布**（`*.app.workbuddy.host`）—— 用 `workbuddy_sites_deploy` 工具。
