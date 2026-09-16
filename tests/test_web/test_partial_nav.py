@@ -153,3 +153,27 @@ def test_nav_targets_do_not_redirect():
             )
             assert "text/html" in r.headers.get("content-type", ""), path
             assert 'id="page-root"' in r.text, path
+
+
+def test_stylesheet_url_is_content_versioned():
+    """样式表 URL 必须带内容指纹。
+
+    事故背景：`/static/*` 被应用设成 `max-age=14400`，托管平台的边缘节点照此
+    缓存；动态 HTML 却是 `no-store`。于是部署后会出现「新页面 + 旧 CSS」——
+    样式改了却在长达 4 小时内不生效，而且因为 HTML 变了，很容易被误判成
+    "改动没起作用"。带上内容指纹后 URL 随内容变化，旧缓存自然被绕开。
+    """
+    html = BASE.read_text(encoding="utf-8")
+    m = re.search(r'<link rel="stylesheet" href="([^"]+)"', html)
+    assert m, "base.html 里找不到样式表 link"
+    assert "?v=" in m.group(1), f"样式表 URL 未做版本化：{m.group(1)}"
+
+    from src.web.deps import static_version
+    v1 = static_version()
+    assert v1 and v1 != "dev", "取不到 style.css 的内容指纹"
+
+    # 渲染出的页面必须带上真实指纹，而不是模板占位符
+    with TestClient(app) as client:
+        page = client.get("/").text
+    assert f'/static/style.css?v={v1}' in page, "渲染结果里没有带上内容指纹"
+    assert "{{" not in page.split("style.css")[1][:20], "模板表达式未被渲染"

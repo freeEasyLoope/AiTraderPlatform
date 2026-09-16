@@ -1,5 +1,6 @@
 """共享依赖——Repository、Templates、工具函数。"""
 
+import hashlib
 from pathlib import Path
 
 from fastapi.templating import Jinja2Templates
@@ -11,6 +12,33 @@ from ..storage.repository import Repository
 _settings = load_settings()
 repo = Repository(_settings["database"]["path"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+
+_STATIC_DIR = Path(__file__).parent / "static"
+# 进程内缓存：同一进程里文件不会变（uvicorn reload=False，改文件必然重启进程）
+_asset_version: dict[str, str] = {}
+
+
+def static_version(name: str = "style.css") -> str:
+    """静态资源的版本指纹，拼到 URL 上做缓存失效。
+
+    为什么必须有：应用对 `/static/*` 下发 `Cache-Control: max-age=14400`，
+    托管平台的边缘节点会照此缓存。而动态 HTML 是 `no-store`（每次都是新的），
+    于是部署后会出现「新页面 + 旧 CSS」——改了样式却在最长达 4 小时内不生效，
+    排查时极容易被误判成"改动没起作用"。带上内容指纹后 URL 随内容变化，
+    旧缓存自然被绕开，静态资源也就可以放心长缓存。
+    """
+    hit = _asset_version.get(name)
+    if hit is not None:
+        return hit
+    try:
+        digest = hashlib.sha256((_STATIC_DIR / name).read_bytes()).hexdigest()[:12]
+    except OSError:
+        digest = "dev"
+    _asset_version[name] = digest
+    return digest
+
+
+templates.env.globals["static_version"] = static_version
 
 # 股票名称映射
 STOCK_NAMES: dict[str, str] = {
