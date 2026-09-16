@@ -66,6 +66,27 @@
 - **新浪实时 `hq.sinajs.cn` 被拒**（403 / 超时）→ 必须靠 `realtime_http.py` 的腾讯多源链兜住，否则 provider 会回落 Mock。
 - 可达：腾讯 `qt.gtimg.cn`、腾讯 `web.ifzq.gtimg.cn`、`quotes.sina.cn` KLine、Yahoo。
 - 不可达：网易（502）、东方财富（RemoteDisconnected）。
+- **访问结构：外壳页 + embed 帧，且应用会被休眠**（这是"点了按钮没反应"的根因）。
+  - 网关按 `Sec-Fetch-Dest` 分流**同一域名**：顶层导航 → PocketBay 外壳页（`X-Frame-Options: DENY`、`frame-ancestors 'none'`、`no-store`）；iframe 请求 → 应用原始 HTML。
+  - 外壳装 `<iframe src="https://<slug>--e.pocketbay.app/<path>">`（`--e` = embed，**子路径保留**，深链接可用）。
+  - **休眠**：闲置会被休眠，再访问时外壳显示「此应用当前正在休眠」+「唤醒并继续」→ `POST /.pocketbay/wake`（实测 1.5s）。
+    若休眠发生在浏览过程中，页面内跳转请求会被挂住、界面无变化。
+  - 后果：**`urllib` 探测与浏览器看到的不是同一个文档**；控制台的 `X-Frame-Options` 报错属平台侧，应用无需（也不应）下发 framing 头。
+  - 应用侧只能"访问期间保活 + 让失败可见"（见 Web 层约定），平台休眠无法从应用侧消除。
+
+## Web 层约定（托管平台交互）
+- **动态响应一律 `Cache-Control: no-store`**（`web/main.py:DynamicNoStore`，纯 ASGI 中间件；用 `BaseHTTPMiddleware` 会缓冲响应体、与 `StaticFiles` 的 `FileResponse` 组合易出问题）。实时看板 HTML 被缓存会显示过时价格。`/static/*` 保持可缓存。
+- **`GET /api/ping` 是保活端点**，只证明进程还在、**不做任何外部探测**；`/api/health` 会真的探数据源（秒级），不可互相替代。前端在页面可见且有操作时每 2 分钟打一次，30 分钟无操作停止。
+- **站内跳转要有可见反馈**（`base.html` navFeedback / `style.css` `#navLoading`）：点击即显示「正在打开…」，超 6s 改「应用正在唤醒，请稍候…」。遮罩必须 `pointer-events:none` 且定时自动移除。
+- 导航状态灯口径：行情 = `realtime||sina`、历史 = `history||baostock`、财务 = `tushare`。**不要只看 `sina`**，否则多源链可用时状态灯仍是红的。
+- `base.html` 用内联 data-URI SVG favicon（原本没有 favicon，浏览器自动请求 `/favicon.ico` 会 404）。
+- **待用户决定**：A 股涨跌配色目前是"涨绿跌红"（国际惯例），中国习惯应为**涨红跌绿**。
+  注意 `.red`/`.green` 同时承载"错误/成功"语义（如 `'<span class="red">请选择起止日期</span>'`），
+  **不能直接交换 CSS 变量值**，只能逐个翻转"涨跌三元表达式"并收口到单一 helper。
 
 ## 验证线上页面时的坑
 - **`WebFetch` 有 15 分钟自缓存**：验证部署后刷新必须加 `?_ts=N` 破缓存，否则会把"旧快照"误判成"改动没生效"（本项目误判过一次首页『行情加载中』）。
+- **`curl`/`urllib` 返回 200 不能说明"点了有反应"**，交互问题必须用真实浏览器验。
+  本机可直接用：`NODE_PATH=%USERPROFILE%\.workbuddy\binaries\node\workspace\node_modules`
+  + `%LOCALAPPDATA%\ms-playwright\chromium-*\chrome-win64\chrome.exe`（Playwright 已装）。
+  要点：① 先 `page.frames()` 找到 `--e` 帧再读 DOM / 用坐标点；② 点击后给足 **20s** 容差，否则会把"慢"误判成"坏"；③ 遇休眠先点「唤醒并继续」。
