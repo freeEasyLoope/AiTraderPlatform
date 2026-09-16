@@ -81,6 +81,7 @@ def _compute_market_env() -> dict:
 _MARKET_ENV_TTL = 600.0        # 成功结果缓存 10 分钟
 _MARKET_ENV_RETRY = 30.0       # 失败后的首次重试间隔
 _MARKET_ENV_RETRY_MAX = 1800.0  # 退避上限 30 分钟（数据源长期不可达时避免反复挂线程）
+_MARKET_ENV_COMPUTE = 120.0    # 单次后台计算的等待上限
 _MARKET_ENV_DEADLINE = 180.0   # 后台刷新超时该时长视为卡死，允许重开
 _MARKET_ENV_PLACEHOLDER = {
     "status": "unknown", "label": "行情加载中", "needle_pos": 50,
@@ -120,7 +121,15 @@ def _refresh_market_env() -> None:
 
     def _work() -> None:
         try:
-            data = _compute_market_env()
+            # 后台计算同样要设界：数据源「挂起」而非「快速失败」时，
+            # 线程永不返回，失败结果写不进去，页面就会永远停在「加载中」。
+            from ...runtime import run_with_timeout
+            data = run_with_timeout(_compute_market_env, _MARKET_ENV_COMPUTE, None)
+            if data is None:
+                logger.warning("市场环境获取超过 %.0fs 未返回，本次放弃", _MARKET_ENV_COMPUTE)
+                data = {"status": "unknown", "label": "行情离线", "needle_pos": 50,
+                        "trend": "?", "volatility": "?", "index_price": 0.0,
+                        "desc": "数据源未在限定时间内响应，请检查网络或数据源可用性"}
             ok = data.get("status") in ("bull", "bear", "sideways")
             with _market_env_guard:
                 # 失败结果也记下来，页面才能如实显示「行情离线」而不是永远「加载中」
