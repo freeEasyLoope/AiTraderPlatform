@@ -103,8 +103,10 @@ class FunnelDataSource:
         # 方案 A：用已有 provider 的历史接口
         try:
             from datetime import datetime, timedelta
-            end = datetime.now().strftime("%Y%m%d")
-            start = (datetime.now() - timedelta(days=days + 5)).strftime("%Y%m%d")
+            # provider 接口统一用 ISO 日期；曾误用 akshare 的紧凑格式 "YYYYMMDD"，
+            # 会被 baostock 判为非法日期、且字符串区间比较恒为 False 而静默丢数据。
+            end = datetime.now().strftime("%Y-%m-%d")
+            start = (datetime.now() - timedelta(days=days + 5)).strftime("%Y-%m-%d")
             hist = self._market.get_historical_data(symbols[:50], start, end)
             for sym, snapshots in hist.items():
                 vols = [s.volume for s in snapshots if s.volume > 0]

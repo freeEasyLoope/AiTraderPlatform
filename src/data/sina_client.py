@@ -18,7 +18,7 @@ from typing import Optional
 from urllib import request
 
 from .provider import MarketDataProvider, MarketSnapshot
-from ..runtime import run_with_timeout
+from ..runtime import normalize_date, run_with_timeout
 
 logger = logging.getLogger(__name__)
 
@@ -302,8 +302,14 @@ class SinaClient(MarketDataProvider):
         baostock 只做兜底且必须设界——它无超时参数，数据源不可达时会永久挂起，
         实测会拖死整个请求并导致平台探活失败、部署被判不可用。
         取不到的标的缓存为空列表，避免每次调用重复重试。
+
+        日期在入口统一归一化为 ISO："YYYY-MM-DD"。上游（筛选器）历史遗留
+        紧凑格式 "YYYYMMDD"，会被 baostock 判为非法日期，也会因字符串
+        区间比较失效而静默丢数据。
         """
         from .kline_http import fetch_history_batch
+
+        start_date, end_date = normalize_date(start_date), normalize_date(end_date)
 
         cache_key = f"{start_date}_{end_date}"
         cached = _HIST_CACHE.get(cache_key)
@@ -334,18 +340,17 @@ class SinaClient(MarketDataProvider):
     def _fetch_history_baostock_batch(
         self, symbols: list[str], start_date: str, end_date: str
     ) -> dict[str, list[MarketSnapshot]]:
-        """批量获取 baostock 历史日线（一次登录）。"""
-        import baostock as bs
+        """批量获取 baostock 历史日线（一次登录）。
+
+        仅作 HTTP 源全部失败后的兜底。登录走 `baostock_utils.open_bs`：
+        带超时与熔断，不可达时立即返回 None 而不是永久挂起。
+        """
+        from .baostock_utils import close_bs, open_bs
 
         result: dict[str, list[MarketSnapshot]] = {}
 
-        # 不替换全局 sys.stdout：数据源不可达时 bs.login() 会长时间阻塞，
-        # 此时若 stdout 已被换成 StringIO，进程日志会永久静音，线上无法排障。
-        # baostock 的 "login success!" 噪音可接受。
-        lg = bs.login()
-
-        if lg.error_code != "0":
-            logger.warning(f"baostock 登录失败: {lg.error_msg}")
+        bs = open_bs()
+        if bs is None:
             return result
 
         try:
@@ -389,7 +394,7 @@ class SinaClient(MarketDataProvider):
                     logger.debug(f"baostock {symbol}: {e}")
                     continue
         finally:
-            bs.logout()
+            close_bs(bs)
 
         return result
 

@@ -171,12 +171,12 @@ def api_health():
         return snap is not None and snap.close > 0
 
     def _probe_baostock() -> bool:
-        import baostock as bs
-        lg = bs.login()
-        ok = lg.error_code == "0"
-        if ok:
-            bs.logout()
-        return ok
+        from ..data.baostock_utils import close_bs, open_bs
+        bs = open_bs(timeout=8.0)
+        if bs is None:
+            return False
+        close_bs(bs)
+        return True
 
     # 两个数据源都不接受超时参数（baostock 不可达时可阻塞 80s+），统一设界，
     # 否则探活请求会一直挂着——单进程容器里足以让平台判定服务不可用。

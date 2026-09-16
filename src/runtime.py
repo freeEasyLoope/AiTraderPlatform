@@ -147,3 +147,58 @@ def run_with_timeout(fn, timeout: float, default=None):
     if "error" in box:
         raise box["error"]
     return box.get("value", default)
+
+
+# ── 数据源熔断 ──
+# 意义：baostock 这类源不可达时不是"失败"，而是"永久挂起"。只靠超时的话，
+# 每个请求都要先白等一个超时周期；熔断让后续请求立刻跳过，页面不再被拖慢。
+_SOURCE_DOWN_UNTIL: dict[str, float] = {}
+_SOURCE_GUARD = threading.Lock()
+DEFAULT_SOURCE_COOLDOWN = 600.0
+
+
+def source_available(name: str) -> bool:
+    """数据源是否可用（熔断冷却期内返回 False）。"""
+    with _SOURCE_GUARD:
+        return time.time() >= _SOURCE_DOWN_UNTIL.get(name, 0.0)
+
+
+def mark_source_down(name: str, cooldown: float = DEFAULT_SOURCE_COOLDOWN) -> None:
+    """标记数据源不可用，冷却期内不再尝试。"""
+    with _SOURCE_GUARD:
+        _SOURCE_DOWN_UNTIL[name] = time.time() + cooldown
+    logger.warning("数据源 %s 不可用，%.0f 秒内跳过", name, cooldown)
+
+
+def mark_source_up(name: str) -> None:
+    """数据源恢复正常，解除熔断。"""
+    with _SOURCE_GUARD:
+        if _SOURCE_DOWN_UNTIL.pop(name, None) is not None:
+            logger.info("数据源 %s 已恢复", name)
+
+
+# ── 日期格式归一化 ──
+# 为什么必须收口：内部各数据源对日期格式要求不一致——
+#   baostock 要求 "YYYY-MM-DD"（传 "YYYYMMDD" 会被拒：'日期格式不正确，请修改。'），
+#   而筛选器历史上按 akshare 的紧凑格式 "YYYYMMDD" 传参。
+# 更隐蔽的是 kline_http 用字符串比较过滤区间：紧凑格式与 "2024-01-02" 比较时
+# 会因 ASCII 顺序（'0' > '-'）恒为 False，导致**整批数据被静默过滤掉**，
+# 表现为"历史成交量全部取不到"而不是报错。统一在边界归一化，杜绝这类静默失败。
+def normalize_date(value) -> str:
+    """把日期归一化为 ISO "YYYY-MM-DD"。
+
+    接受 str/date/datetime；无法识别时原样返回（由调用方自行处理）。
+    """
+    if value is None:
+        return ""
+    if hasattr(value, "strftime"):
+        return value.strftime("%Y-%m-%d")
+
+    s = str(value).strip()
+    if not s:
+        return ""
+    if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+        return s[:10]
+    if len(s) >= 8 and s[:8].isdigit():
+        return f"{s[:4]}-{s[4:6]}-{s[6:8]}"
+    return s

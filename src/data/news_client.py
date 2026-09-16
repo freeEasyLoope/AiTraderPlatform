@@ -145,17 +145,13 @@ def _fetch_sina_news(symbol: str) -> list[dict]:
 
 
 def _fetch_baostock_announcements(symbol: str) -> list[dict]:
-    """从 baostock 获取分红和业绩预告信息。"""
+    """从 baostock 获取分红和业绩预告信息（不可用时返回空，不阻塞）。"""
+    from .baostock_utils import close_bs, open_bs
+
     news = []
     try:
-        import baostock as bs
-
-        old, sys.stdout = sys.stdout, io.StringIO()
-        try:
-            lg = bs.login()
-        finally:
-            sys.stdout = old
-        if lg.error_code != "0":
+        bs = open_bs()
+        if bs is None:
             return news
 
         try:
@@ -167,9 +163,7 @@ def _fetch_baostock_announcements(symbol: str) -> list[dict]:
             # 1. 分红数据
             for year in range(current_year - 2, current_year + 1):
                 try:
-                    old, sys.stdout = sys.stdout, io.StringIO()
                     rs = bs.query_dividend_data(code=bs_code, year=str(year), yearType="report")
-                    sys.stdout = old
                     data = rs.get_data() if hasattr(rs, 'get_data') else None
                     if data is not None and not data.empty:
                         for _, row in data.iterrows():
@@ -189,9 +183,7 @@ def _fetch_baostock_announcements(symbol: str) -> list[dict]:
 
             # 2. 业绩预告
             try:
-                old, sys.stdout = sys.stdout, io.StringIO()
                 rs = bs.query_performance_express_report(code=bs_code, startDate=f"{current_year - 2}-01-01")
-                sys.stdout = old
                 data = rs.get_data() if hasattr(rs, 'get_data') else None
                 if data is not None and not data.empty:
                     for _, row in data.iterrows():
@@ -208,9 +200,7 @@ def _fetch_baostock_announcements(symbol: str) -> list[dict]:
                 pass
 
         finally:
-            old, sys.stdout = sys.stdout, io.StringIO()
-            bs.logout()
-            sys.stdout = old
+            close_bs(bs)
     except Exception as e:
         logger.debug(f"baostock 公告查询失败 {symbol}: {e}")
 

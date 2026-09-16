@@ -16,7 +16,7 @@ import json
 import logging
 import urllib.request
 
-from ..runtime import run_with_timeout
+from ..runtime import normalize_date, run_with_timeout
 from .provider import MarketSnapshot
 
 logger = logging.getLogger(__name__)
@@ -104,6 +104,7 @@ def _to_snapshots(symbol: str, bars: list[dict]) -> list[MarketSnapshot]:
 
 def fetch_history(symbol: str, start_date: str, end_date: str) -> list[MarketSnapshot]:
     """按优先级依次尝试 HTTP 源，全部失败返回空列表（由调用方决定是否兜底）。"""
+    start_date, end_date = normalize_date(start_date), normalize_date(end_date)
     sina_sym = _sina_symbol(symbol)
     for name, fn in _SOURCES:
         try:

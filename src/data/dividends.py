@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import io
 import logging
-import sys
-import time
-from datetime import datetime, timedelta
+from datetime import datetime
+
+from .baostock_utils import close_bs, open_bs
 
 logger = logging.getLogger(__name__)
 
@@ -15,20 +14,13 @@ _dividend_cache: dict[str, list[dict]] = {}
 
 
 def _login_baostock(retries: int = 3, backoff: float = 1.0):
-    """带重试的 baostock 登录。"""
-    import baostock as bs
+    """登录 baostock；不可用返回 None。
 
-    for attempt in range(retries):
-        old, sys.stdout = sys.stdout, io.StringIO()
-        try:
-            lg = bs.login()
-        finally:
-            sys.stdout = old
-        if lg.error_code == "0":
-            return bs
-        if attempt < retries - 1:
-            time.sleep(backoff * (2 ** attempt))
-    return None
+    统一走 `baostock_utils.open_bs`（带超时 + 熔断），不再自己重试：
+    baostock 不可达时不是"失败"而是"永久挂起"，重试只会把请求拖得更死。
+    retries/backoff 参数保留仅为兼容旧调用签名。
+    """
+    return open_bs()
 
 
 def _to_baostock_code(symbol: str) -> str:
@@ -85,9 +77,7 @@ def enrich_dividend_yields(snapshots: dict, symbols: list[str], date: str) -> No
         if enriched:
             logger.info(f"股息率: 补充 {enriched} 条")
     finally:
-        old, sys.stdout = sys.stdout, io.StringIO()
-        bs.logout()
-        sys.stdout = old
+        close_bs(bs)
 
 
 def get_dividend_payments(symbols: list[str], year: int) -> dict[str, list[dict]]:
@@ -114,15 +104,12 @@ def get_dividend_payments(symbols: list[str], year: int) -> dict[str, list[dict]
                     records = _dividend_cache[cache_key]
                 else:
                     try:
-                        old, sys.stdout = sys.stdout, io.StringIO()
                         rs = bs.query_dividend_data(
                             code=bs_code,
                             year=str(y),
                             yearType="report",
                         )
-                        sys.stdout = old
                     except Exception:
-                        sys.stdout = old if 'old' in dir() else sys.stdout
                         continue
 
                     data = rs.get_data() if hasattr(rs, 'get_data') else None
@@ -145,9 +132,7 @@ def get_dividend_payments(symbols: list[str], year: int) -> dict[str, list[dict]
                 if records:
                     result.setdefault(symbol, []).extend(records)
     finally:
-        old, sys.stdout = sys.stdout, io.StringIO()
-        bs.logout()
-        sys.stdout = old
+        close_bs(bs)
 
     return result
 

@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import json
-import io
 import os
-import sys
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter
@@ -198,13 +196,11 @@ async def api_stress_test(symbol: str):
 
     # 事件复盘
     try:
-        import baostock as bs
-        old, sys.stdout = sys.stdout, io.StringIO()
-        lg = bs.login()
-        sys.stdout = old
-        if lg.error_code == "0":
-            prefix = "sh" if symbol.startswith(("5", "6", "9")) else "sz"
+        from ...data.baostock_utils import close_bs, open_bs
+        bs = open_bs()
+        if bs is not None:
             try:
+                prefix = "sh" if symbol.startswith(("5", "6", "9")) else "sz"
                 rs = bs.query_dividend_data(code=f"{prefix}.{symbol}",
                                             year=str(datetime.now().year - 1),
                                             yearType="report")
@@ -217,9 +213,8 @@ async def api_stress_test(symbol: str):
                                 {"type": "分红", "date": str(dd), "detail": f"每股{float(dc):.2f}元"})
             except Exception:
                 pass
-            sys.stdout, old = io.StringIO(), sys.stdout
-            bs.logout()
-            sys.stdout = old
+            finally:
+                close_bs(bs)
     except Exception:
         pass
     return result
