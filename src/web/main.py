@@ -222,12 +222,32 @@ _DIAG_TARGETS = [
     ("query1.finance.yahoo.com", 443, "Yahoo Finance（A股代码 600519.SS，境外备用候选）"),
 ]
 
+# 应用层探针：TCP 秒连不算通，必须读到真实响应体。
+_UA = {"User-Agent": "Mozilla/5.0"}
+_DIAG_HTTP = [
+    ("https://example.com", dict(_UA), "出网基线（有响应体=沙箱能出网）"),
+    ("http://hq.sinajs.cn/list=sh600519",
+     {**_UA, "Referer": "https://finance.sina.com.cn"}, "新浪实时行情（应返回 hq_str_sh600519=…）"),
+    ("http://quotes.money.163.com/service/chddata.html"
+     "?code=0600519&start=20260901&end=20260916&fields=TCLOSE", dict(_UA), "网易历史日线"),
+    ("https://push2his.eastmoney.com/api/qt/stock/kline/get"
+     "?secid=1.600519&fields1=f1&fields2=f51,f53&klt=101&fqt=1&lmt=5", dict(_UA),
+     "东方财富日线（akshare 同源）"),
+    ("https://query1.finance.yahoo.com/v8/finance/chart/600519.SS?range=1mo&interval=1d",
+     dict(_UA), "Yahoo 的 A 股日线（境外备用候选）"),
+]
+
 
 @app.get("/api/diag")
 def api_diag():
-    """数据源连通性体检：区分 DNS 失败 / TCP 不通 / 通了但取不到数据。"""
+    """数据源连通性体检：DNS → TCP → 真实 HTTP 取数，三层定位。
+
+    注意：托管沙箱普遍走透明代理，TCP 会「秒连成功」但数据并不真的通。
+    所以只信第三层——能读到真实响应体才算通。
+    """
     import socket
     import time as _time
+    import urllib.request
 
     from ..runtime import run_with_timeout
 
@@ -258,4 +278,31 @@ def api_diag():
         item["tcp_ms"] = round((_time.time() - t0) * 1000)
         hosts.append(item)
 
-    return {"ok": True, "hosts": hosts}
+    def _http(url: str, headers: dict) -> dict:
+        from urllib.error import HTTPError
+        req = urllib.request.Request(url, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                body = resp.read(300)
+                return {"status": resp.status, "bytes": len(body),
+                        "body": body.decode("utf-8", "replace")[:120]}
+        except HTTPError as e:
+            body = e.read(200)
+            return {"status": e.code, "bytes": len(body),
+                    "body": body.decode("utf-8", "replace")[:120]}
+
+    http = []
+    for url, headers, label in _DIAG_HTTP:
+        t0 = _time.time()
+        try:
+            got = run_with_timeout(lambda u=url, h=headers: _http(u, h), 12, None)
+        except Exception as e:
+            got = {"error": f"{type(e).__name__}: {e}"[:120]}
+        if got is None:
+            got = {"error": "timeout(12s) — 连接建立了但拿不到响应体"}
+        got["ms"] = round((_time.time() - t0) * 1000)
+        got["label"] = label
+        got["url"] = url
+        http.append(got)
+
+    return {"ok": True, "hosts": hosts, "http": http}
