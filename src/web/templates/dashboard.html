@@ -8,7 +8,7 @@
 <div class="section-header">
     <div>
         <h1>⊞ 交易总览 <span class="text-muted" style="font-size:13px;font-weight:400">· {{ today }}</span></h1>
-        <p class="page-subtitle">六位操盘手 · 双组对抗 · 实时模拟</p>
+        <p class="page-subtitle">六位操盘手 · 双组对抗 · 实时模拟 <span class="src-date">数据截至 {{ as_of_date() }}</span></p>
     </div>
     <div class="btn-group">
         <button class="help-toggle" onclick="document.getElementById('helpBox').classList.toggle('show')">? 新手引导</button>
@@ -30,14 +30,14 @@
      MARKET ENVIRONMENT STRIP
      ═══════════════════════════════════════════════ -->
 <div class="market-env">
-    <span style="font-size:13px;font-weight:600;color:var(--text2);white-space:nowrap">市场环境</span>
+    <span style="font-size:13px;font-weight:600;color:var(--text2);white-space:nowrap"><span class="term" data-tip="当前 A 股整体强弱状态：偏强 / 偏弱 / 震荡。策略约 70% 的表现由它决定。">市场环境</span></span>
     <div class="env-gauge">
         <div class="needle" style="left:{{ market_env.needle_pos }}%"></div>
     </div>
     <span class="env-label env-{{ market_env.status }}">{{ market_env.label }}</span>
     <span class="nav-divider" style="margin:0 4px"></span>
     <div class="env-meta">
-        <span>📈 沪深300 <strong class="env-{{ market_env.status }}">{{ market_env.trend }}</strong></span>
+        <span>📈 <span class="term" data-tip="沪深300 指数：A 股最具代表性的大盘蓝筹指数，由市值最大的 300 家公司组成。">沪深300</span> <strong class="env-{{ market_env.status }}">{{ market_env.trend }}</strong></span>
         <span>📊 波动 <strong>{{ market_env.volatility }}</strong></span>
         <span>💹 指数 <strong>¥{{ "%.2f"|format(market_env.index_price) }}</strong></span>
     </div>
@@ -50,12 +50,12 @@
 <div class="stats">
     <div class="stat">
         <div class="value cyan">¥{{ "%.0f"|format(total_value) }}</div>
-        <div class="label">总资产</div>
+        <div class="label"><span class="term" data-tip="该操盘手当前「现金 + 持仓市值」的总和，即其「身价」。">总资产</span></div>
         <div class="hint">初始 ¥{{ "%.0f"|format(short_capital + long_capital) }}</div>
     </div>
     <div class="stat">
         <div class="value {{ 'green' if total_return >= 0 else 'red' }}">{{ "%+.2f"|format(total_return) }}%</div>
-        <div class="label">综合收益</div>
+        <div class="label"><span class="term" data-tip="所有操盘手自初始资金以来的累计收益率，正为盈利、负为亏损。">综合收益</span></div>
         <div class="delta {{ 'green' if total_return >= 0 else 'red' }}">
             {{ '↑' if total_return >= 0 else '↓' }} {{ '盈利中' if total_return >= 0 else '亏损中' }}
         </div>
@@ -69,19 +69,19 @@
         <div class="value">
             <span class="green">{{ active_short }}</span>/<span class="purple">{{ active_long }}</span>
         </div>
-        <div class="label">活跃策略</div>
+        <div class="label"><span class="term" data-tip="当前持有仓位且近期有交易的策略数量，分为短线组与长线组。">活跃策略</span></div>
         <div class="hint">短线/长线</div>
     </div>
     <div class="stat">
         <div class="value {{ 'green' if best and best.return_pct >= 0 else 'red' }}">{{ best.name if best else '-' }}</div>
-        <div class="label">最佳操盘手</div>
+        <div class="label"><span class="term" data-tip="按累计收益率排名第一的操盘手。">最佳操盘手</span></div>
         <div class="hint {{ 'green' if best and best.return_pct >= 0 else 'red' }}">{{ "%+.1f"|format(best.return_pct) if best else '' }}%</div>
     </div>
 </div>
 
 {% if total_return <= -5 %}
 <div class="tip-card">
-    <strong>⚠ 注意：</strong>综合亏损超过 5%。建议查看<a href="/strategies" style="color:var(--accent)">策略实验室</a>回测不同参数，或查看<a href="/reports" style="color:var(--accent)">AI 周报</a>获取优化建议。
+    <strong>⚠ 注意：</strong>综合亏损超过 5%。建议查看<a href="/strategies" style="color:var(--accent)">策略实验室</a>回测不同参数，或查看<a href="/settings?tab=logs" style="color:var(--accent)">AI 周报</a>获取优化建议。
 </div>
 {% endif %}
 
@@ -183,7 +183,7 @@
 <div class="card">
     <div class="card-header">
         <h2>最近交易记录</h2>
-        <a href="/reports" class="text-sm link">查看全部 →</a>
+        <a href="/settings?tab=logs" class="text-sm link">查看全部 →</a>
     </div>
     <p class="text-muted mb-8">
         买入(BUY)：策略认为该股票被低估或有上涨趋势。卖出(SELL)：止盈、止损或趋势反转。
@@ -250,7 +250,7 @@
                 <div class="hint">调整止损/仓位等策略参数</div>
             </div>
         </a>
-        <a href="/reports" style="text-decoration:none">
+        <a href="/settings?tab=logs" style="text-decoration:none">
             <div class="stat">
                 <div class="value" style="font-size:32px">🤖</div>
                 <div class="label" style="color:var(--accent)">AI 周报</div>

@@ -4,7 +4,7 @@
 <div class="section-header">
     <div>
         <h1>⚠ 风险实验室</h1>
-        <p class="page-subtitle">如果历史重演，你的组合会怎样？——用六场真实危机做压力测试</p>
+        <p class="page-subtitle">如果历史重演，你的组合会怎样？——用六场真实危机做压力测试 <span class="src-date">数据截至 {{ as_of_date() }}</span></p>
     </div>
     <button class="help-toggle" onclick="document.getElementById('helpBox').classList.toggle('show')">? 使用说明</button>
 </div>
@@ -23,12 +23,12 @@
     <div class="stats" style="margin-bottom:0">
         <div class="stat" style="background:var(--bg)">
             <div class="value cyan">¥{{ "%.0f"|format(total_market_value) }}</div>
-            <div class="label">持仓总市值</div>
+            <div class="label"><span class="term" data-tip="当前所有持仓股票按现价计算的总价值。">持仓总市值</span></div>
             <div class="hint">{{ position_count }} 只标的</div>
         </div>
         <div class="stat" style="background:var(--bg)">
             <div class="value">{{ position_count }}</div>
-            <div class="label">持仓数量</div>
+            <div class="label"><span class="term" data-tip="当前持有的不同标的（股票/ETF）数量。">持仓数量</span></div>
             <div class="hint">只（六人合并去重）</div>
         </div>
     </div>

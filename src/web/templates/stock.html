@@ -7,15 +7,28 @@
         <h1 style="font-size:22px;margin-top:6px">
             {{ name }}
             <span class="text-muted" style="font-size:15px;font-weight:400">{{ symbol }}</span>
+            <span class="src-date">数据截至 {{ as_of_date() }}</span>
         </h1>
     </div>
+    <div class="btn-group">
+        <button class="help-toggle" onclick="document.getElementById('helpBox').classList.toggle('show')">? 指标解释</button>
+    </div>
+</div>
+
+<div class="help-box" id="helpBox">
+    <p><strong>📖 个股详情页怎么看？</strong></p>
+    <p>• <strong>最新价</strong>：该股票最近一笔成交价。涨绿跌红（国际惯例），下方百分比为当日涨跌幅。</p>
+    <p>• <strong>市盈率 (PE)</strong> = 股价 ÷ 每股收益。越低越「便宜」，但需结合行业判断。</p>
+    <p>• <strong>市净率 (PB)</strong> = 股价 ÷ 每股净资产。&lt;1 即「破净」，资产折价。</p>
+    <p>• <strong>估值温度计</strong>：PE 在历史分位越低越「便宜」，&gt;70% 为高估区。</p>
+    <p style="margin-top:8px">💡 <strong>分红 / 公告</strong>：来自公告数据，可能离线（平台未接入时显示空）。</p>
 </div>
 
 {% if price %}
 <div class="stats">
     <div class="stat">
         <div class="value {{ 'green' if price.change_pct >= 0 else 'red' }}">¥{{ "%.2f"|format(price.close) }}</div>
-        <div class="label">最新价</div>
+        <div class="label"><span class="term" data-tip="该股票最近一笔成交的价格。">最新价</span></div>
         <div class="hint {{ 'green' if price.change_pct >= 0 else 'red' }}">
             {{ '↑' if price.change_pct >= 0 else '↓' }}{{ "%+.2f"|format(price.change_pct * 100) }}%
         </div>
@@ -30,7 +43,7 @@
     </div>
     <div class="stat">
         <div class="value">{{ "%.1f"|format(pe) if pe else '-' }}</div>
-        <div class="label">市盈率 (PE)</div>
+        <div class="label"><span class="term" data-tip="市盈率 (PE)：股价 ÷ 每股收益。越低越「便宜」，但需结合行业判断。">市盈率 (PE)</span></div>
         <div class="hint">
             {% if pe %}
             {{ '偏低' if pe < 15 else '偏高' if pe > 30 else '适中' }}
@@ -42,7 +55,7 @@
     </div>
     <div class="stat">
         <div class="value">{{ "%.2f"|format(pb) if pb else '-' }}</div>
-        <div class="label">市净率 (PB)</div>
+        <div class="label"><span class="term" data-tip="市净率 (PB)：股价 ÷ 每股净资产。&lt;1 即「破净」。">市净率 (PB)</span></div>
         <div class="hint">{{ '低估' if pb and pb < 1 else '合理' if pb and pb < 3 else '偏高' if pb else '' }}</div>
     </div>
 </div>

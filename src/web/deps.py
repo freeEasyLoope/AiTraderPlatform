@@ -1,6 +1,7 @@
 """共享依赖——Repository、Templates、工具函数。"""
 
 import hashlib
+from datetime import datetime
 from pathlib import Path
 
 from fastapi.templating import Jinja2Templates
@@ -39,6 +40,9 @@ def static_version(name: str = "style.css") -> str:
 
 
 templates.env.globals["static_version"] = static_version
+
+# 数据来源日期：模板用 {{ as_of_date() }} 标注数据对应的日期（逐次渲染重算，跨午夜也准确）
+templates.env.globals["as_of_date"] = lambda: datetime.now().strftime("%Y-%m-%d")
 
 # 股票名称映射
 STOCK_NAMES: dict[str, str] = {

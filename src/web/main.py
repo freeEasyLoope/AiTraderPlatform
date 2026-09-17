@@ -24,6 +24,7 @@ from .routes.risk_lab import router as risk_lab_router
 from .routes.onboarding import router as onboarding_router
 from .routes.challenge import router as challenge_router
 from .routes.screening import router as screening_router
+from .routes.settings import router as settings_router
 
 logger = logging.getLogger(__name__)
 
@@ -35,13 +36,20 @@ async def lifespan(app: FastAPI):
     PocketBay 只跑一个 web 进程且不提供 cron，定时交易必须在应用内调度。
     本地（未注入 POCKETBAY_DATA_DIR）默认不启动，避免与 run_daily.bat 重复下单。
     """
-    from ..config import load_settings, load_traders
+    from ..config import load_settings, load_traders, load_invest
     from ..engine.scheduler import TradingScheduler
     from ..runtime import is_managed_env, setup_logging
     from .deps import repo
 
     settings = load_settings()
     setup_logging(settings.get("logging", {}).get("level", "INFO"))
+
+    # 自动投资开关：关闭则不在进程内启动调度（既停自动交易，也停自动周报）。
+    auto_invest_on = True
+    try:
+        auto_invest_on = bool((load_invest().get("auto_invest") or {}).get("enabled", True))
+    except Exception:
+        auto_invest_on = True
 
     # 部署包不含本地 SQLite，线上首启必须自建表并创建操盘手账户，否则首屏是空看板
     repo.init_traders(load_traders())
@@ -55,6 +63,7 @@ async def lifespan(app: FastAPI):
     want_scheduler = (
         os.environ.get("AITRADER_DISABLE_SCHEDULER") != "1"
         and (bool(sched_cfg.get("run_in_web")) or deployed)
+        and auto_invest_on
     )
     if want_scheduler:
         try:
@@ -173,6 +182,7 @@ app.include_router(control_router)
 app.include_router(reports_router)
 app.include_router(watchlist_router)
 app.include_router(analysis_router)
+app.include_router(settings_router)
 
 
 # 健康检查探针是阻塞网络调用（baostock 不可达时可达 80s+），

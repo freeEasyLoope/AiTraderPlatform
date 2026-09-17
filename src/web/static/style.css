@@ -45,8 +45,8 @@
   --shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
   --shadow-hover: 0 6px 32px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.5);
-  --glow-accent: 0 2px 12px rgba(56, 189, 248, 0.25);
-  --glow-accent-hover: 0 4px 20px rgba(56, 189, 248, 0.4);
+  --glow-accent: 0 2px 12px var(--accent-glow);
+  --glow-accent-hover: 0 4px 20px var(--accent-glow);
   --glow-green: 0 2px 12px rgba(34, 197, 94, 0.2);
 
   /* Glass */
@@ -872,6 +872,173 @@ button.loading::after,
 .toast-err {
   background: var(--red);
   color: #fff;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   THEME VARIANTS — 2026 流行配色（强差异化）
+   每个主题完整覆盖：外壳色（背景/面片/边框）、主强调色链
+   （--accent / --accent2 / --accent-glow，驱动按钮·链接·激活态·焦点环）、
+   文字层级与图表网格色。浅色主题额外加深语义涨跌色以保证对比度。
+   注：旧版只覆盖了 --accent2，导致四个主题的主按钮/链接全是同一种天蓝，
+   看起来"没区别"。新版每个主题都有自己的主色，差异一眼可见。
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* 极光 · 翡翠深潭（青绿金融成长感） */
+[data-theme="aurora"] {
+  --bg: #04181b;
+  --surface: #082227;
+  --card: #0c2c33;
+  --card-hover: #103a43;
+  --border: #14424c;
+  --accent: #2dd4bf;
+  --accent2: #34d399;
+  --accent-glow: rgba(45, 212, 191, 0.18);
+  --text: #e3f5f2;
+  --text2: #9ad4cb;
+  --text3: #5e9a93;
+  --text-hint: #76a89f;
+  --chart-grid: #123a40;
+  --glass: rgba(255, 255, 255, 0.025);
+  --glass-hover: rgba(255, 255, 255, 0.05);
+}
+
+/* 落日 · 暖炭余烬（莫卡/赤陶暖中性，按钮整体转暖色） */
+[data-theme="sunset"] {
+  --bg: #1a0e0d;
+  --surface: #241514;
+  --card: #2c1a18;
+  --card-hover: #37211e;
+  --border: #3d2420;
+  --accent: #fb923c;
+  --accent2: #fb7185;
+  --accent-glow: rgba(251, 146, 60, 0.18);
+  --text: #fbeee7;
+  --text2: #d9b4a3;
+  --text3: #a07160;
+  --text-hint: #b08a7a;
+  --chart-grid: #3a221e;
+  --glass: rgba(255, 255, 255, 0.02);
+  --glass-hover: rgba(255, 255, 255, 0.045);
+}
+
+/* 晨光 · 云白摩卡（2026 浅色趋势：Cloud Dancer / Mocha Mousse） */
+[data-theme="lumen"] {
+  --bg: #f3efe8;
+  --surface: #faf7f1;
+  --card: #ffffff;
+  --card-hover: #fbf7f0;
+  --border: #e7e0d4;
+  --accent: #6366f1;
+  --accent2: #8b5cf6;
+  --accent-glow: rgba(99, 102, 241, 0.12);
+  --green: #15803d;
+  --red: #dc2626;
+  --yellow: #b45309;
+  --purple: #7c3aed;
+  --pink: #db2777;
+  --orange: #ea580c;
+  --text: #1f2430;
+  --text2: #5b6472;
+  --text3: #8a909c;
+  --text-hint: #9aa0ab;
+  --chart-grid: #ece6db;
+  --glass: rgba(0, 0, 0, 0.015);
+  --glass-hover: rgba(0, 0, 0, 0.03);
+  --shadow: 0 4px 24px rgba(60, 50, 30, 0.08);
+  --shadow-hover: 0 6px 32px rgba(60, 50, 30, 0.12);
+  --shadow-lg: 0 12px 48px rgba(60, 50, 30, 0.16);
+}
+
+/* ── 各主题氛围光晕（背景径向渐变，强化"背景也随主题变"） ── */
+[data-theme="aurora"] body {
+  background-image:
+    radial-gradient(ellipse at 15% 0%, rgba(45, 212, 191, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 85% 100%, rgba(52, 211, 153, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, rgba(45, 212, 191, 0.025) 0%, transparent 70%);
+}
+[data-theme="sunset"] body {
+  background-image:
+    radial-gradient(ellipse at 15% 0%, rgba(251, 146, 60, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 85% 100%, rgba(251, 113, 133, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, rgba(251, 146, 60, 0.02) 0%, transparent 70%);
+}
+[data-theme="lumen"] body {
+  background-image:
+    radial-gradient(ellipse at 12% 0%, rgba(99, 102, 241, 0.05) 0%, transparent 55%),
+    radial-gradient(ellipse at 88% 100%, rgba(139, 92, 246, 0.04) 0%, transparent 55%),
+    radial-gradient(ellipse at 50% 60%, rgba(245, 158, 11, 0.03) 0%, transparent 70%);
+}
+
+/* ── 主题切换器 ── */
+.theme-switcher {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 10px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+}
+.theme-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+.theme-dot:hover { transform: scale(1.15); }
+.theme-dot.active { border-color: var(--text); }
+.theme-midnight { background: linear-gradient(135deg, #080b12, #38bdf8); }
+.theme-aurora   { background: linear-gradient(135deg, #04181b, #2dd4bf); }
+.theme-sunset   { background: linear-gradient(135deg, #1a0e0d, #fb923c); }
+.theme-lumen    { background: linear-gradient(135deg, #f3efe8, #6366f1); }
+
+/* ── 名词提示 ── */
+.term {
+  border-bottom: 1px dotted var(--accent);
+  cursor: help;
+  color: var(--text);
+  transition: color var(--dur-fast) var(--ease-out);
+}
+.term:hover { color: var(--accent); }
+#termTip {
+  position: fixed;
+  z-index: 400;
+  max-width: 280px;
+  padding: 8px 12px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  font-size: 12px;
+  line-height: 1.6;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
+
+/* ── 来源日期徽标 ── */
+.src-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text3);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 3px 10px;
+  margin-left: 8px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.src-date::before {
+  content: "\1F553";
+  font-size: 10px;
+}
+
+@media (max-width: 768px) {
+  .theme-switcher { display: none; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -1784,7 +1951,7 @@ a:hover {
   white-space: nowrap;
 }
 .nav-retry:hover {
-  background: rgba(56, 189, 248, 0.12);
+  background: var(--accent-glow);
 }
 
 /* ── 异步站内导航：局部加载（见 base.html 的 asyncNav） ──

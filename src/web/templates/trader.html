@@ -13,6 +13,7 @@
         </h1>
     </div>
     <div class="btn-group">
+        <span class="src-date">数据截至 {{ as_of_date() }}</span>
         <button class="help-toggle" onclick="document.getElementById('helpBox').classList.toggle('show')">? 指标解释</button>
         <a href="/control" class="btn btn-ghost btn-sm">调整参数</a>
     </div>
@@ -31,22 +32,22 @@
 <div class="stats">
     <div class="stat">
         <div class="value cyan">¥{{ "%.2f"|format(trader.total_value) }}</div>
-        <div class="label">总资产</div>
+        <div class="label"><span class="term" data-tip="该操盘手当前「现金 + 持仓市值」之和，即其「身价」。">总资产</span></div>
         <div class="hint">初始 ¥{{ "%.0f"|format(trader.initial_capital) }}</div>
     </div>
     <div class="stat">
         <div class="value {{ 'green' if trader.return_pct >= 0 else 'red' }}">{{ "%+.2f"|format(trader.return_pct) }}%</div>
-        <div class="label">累计收益率</div>
+        <div class="label"><span class="term" data-tip="(总资产 − 初始资金) ÷ 初始资金。红色为亏损、绿色为盈利。">累计收益率</span></div>
     </div>
     <div class="stat">
         <div class="value">¥{{ "%.2f"|format(trader.cash) }}</div>
-        <div class="label">可用现金</div>
+        <div class="label"><span class="term" data-tip="尚未买入股票、可用于交易的现金。">可用现金</span></div>
         <div class="hint">占比 {{ "%.0f"|format(trader.cash / trader.total_value * 100) if trader.total_value > 0 else 100 }}%</div>
     </div>
     <div class="stat">
         {% set mv = trader.total_value - trader.cash %}
         <div class="value">¥{{ "%.2f"|format(mv) }}</div>
-        <div class="label">持仓市值</div>
+        <div class="label"><span class="term" data-tip="当前所有持仓股票按现价计算的总价值。">持仓市值</span></div>
         <div class="hint">仓位 {{ "%.0f"|format(mv / trader.total_value * 100) if trader.total_value > 0 else 0 }}%</div>
     </div>
     <div class="stat">

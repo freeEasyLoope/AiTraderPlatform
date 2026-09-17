@@ -26,11 +26,12 @@ BASE = TEMPLATES / "base.html"
 
 # 行首（零缩进）= 页面脚本的顶层声明。降级为 var 后语义等价（已逐一核对：
 # 都是普通常量表 / 布尔开关，没有被同名的块级声明遮蔽）。
+# 注：reports.html 已随「日志 & 周报」并入设置中心（settings.html）而删除，
+# 其 allReportsOpen 一并消失。
 EXPECTED_TOPLEVEL_LEXICAL = {
     ("control.html", "PARAM_NAMES"),
     ("control.html", "PARAM_HINTS"),
     ("control.html", "allOpen"),
-    ("reports.html", "allReportsOpen"),
 }
 
 

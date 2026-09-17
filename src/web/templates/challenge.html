@@ -4,7 +4,7 @@
 <div class="section-header">
     <div>
         <h1>🏆 模拟挑战</h1>
-        <p class="page-subtitle">创建你自己的策略，与六位 AI 操盘手同台竞技</p>
+        <p class="page-subtitle">创建你自己的策略，与六位 AI 操盘手同台竞技 <span class="src-date">数据截至 {{ as_of_date() }}</span></p>
     </div>
     <button class="help-toggle" onclick="document.getElementById('helpBox').classList.toggle('show')">? 规则说明</button>
 </div>
@@ -106,7 +106,7 @@
 
         <div class="btn-group mt-12">
             <a href="/control" class="btn btn-sm">⚙ 调整参数</a>
-            <a href="/reports" class="btn btn-ghost btn-sm">📋 查看报告</a>
+            <a href="/settings?tab=logs" class="btn btn-ghost btn-sm">📋 查看报告</a>
         </div>
     </div>
     {% else %}
@@ -137,7 +137,7 @@
             <p class="text-muted">短期波动是噪音。给策略足够时间经历不同行情（上涨、下跌、震荡）。</p>
 
             <p style="margin-top:12px"><strong>4. 复盘总结</strong></p>
-            <p class="text-muted">在<a href="/reports" style="color:var(--accent)">AI 周报</a>中看你的 Alpha、回撤、夏普比率——和 AI 操盘手对比，找到差距。</p>
+            <p class="text-muted">在<a href="/settings?tab=logs" style="color:var(--accent)">AI 周报</a>中看你的 <span class="term" data-tip="Alpha：策略相对市场的超额收益，衡量「跑赢大盘」的能力。">Alpha</span>、回撤、<span class="term" data-tip="夏普比率：每承担一单位风险获得的超额收益，越高代表风险调整后收益越好。">夏普比率</span>——和 AI 操盘手对比，找到差距。</p>
         </div>
     </div>
 </div>

@@ -1,0 +1,337 @@
+{% extends "base.html" %}
+{% block content %}
+
+<style>
+    .tabs {
+        display: flex; gap: 8px; margin-bottom: 18px;
+        border-bottom: 1px solid var(--border);
+    }
+    .tab {
+        background: transparent; border: none; padding: 11px 20px;
+        font-size: 14px; color: var(--text3); cursor: pointer;
+        border-bottom: 2px solid transparent; transition: .15s;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.active {
+        color: var(--accent); border-bottom-color: var(--accent); font-weight: 600;
+    }
+    .tab-panel { animation: fadeIn .18s ease; }
+    @keyframes fadeIn { from { opacity: .35 } to { opacity: 1 } }
+</style>
+
+<div class="section-header">
+    <div>
+        <h1>⚙ 设置中心</h1>
+        <p class="page-subtitle">投资配置与运行日志 · 用上方标签切换</p>
+    </div>
+</div>
+
+<!-- 标签切换（禁止纵向堆叠：两模块用标签平铺） -->
+<div class="tabs" role="tablist">
+    <button class="tab" id="tabBtn-invest" data-tab="invest" onclick="switchTab('invest')">🤖 投资设置</button>
+    <button class="tab" id="tabBtn-logs" data-tab="logs" onclick="switchTab('logs')">📋 日志 &amp; 周报</button>
+</div>
+
+<!-- ============== 标签一：投资设置 ============== -->
+<section id="panel-invest" class="tab-panel">
+    <div class="help-box" id="investHelp">
+        <p><strong>🤖 自动投资</strong>：开启后，系统在每个交易日盘后按设定时间自动执行交易（相当于「托管」你的策略）。关闭则不再自动交易，你仍可手动在控制台触发。</p>
+        <p><strong>📊 组合策略投资</strong>：按比例把资金分配到六位操盘手（策略），并定期再平衡，避免单一策略大起大落。各策略权重保存时自动归一化为 100%。</p>
+        <p><strong>⚠ 风险提示</strong>：本平台为模拟学习工具，所有资金均为虚拟，设置仅影响模拟账户。</p>
+    </div>
+    <div style="margin: 12px 0 18px">
+        <button class="help-toggle" onclick="document.getElementById('investHelp').classList.toggle('show')">? 投资设置说明</button>
+    </div>
+
+    <!-- 自动投资 -->
+    <div class="card">
+        <h2>🤖 自动投资</h2>
+        <div class="param-row">
+            <label class="pname">启用自动投资</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="checkbox" id="ai_enabled" {% if cfg.auto_invest.enabled %}checked{% endif %} style="width:16px;height:16px;accent-color:var(--accent)">
+                <span class="text-muted">每个交易日盘后自动执行交易</span>
+            </label>
+        </div>
+        <div class="param-row">
+            <label class="pname">投资节奏</label>
+            <select id="ai_schedule" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 12px;border-radius:8px;font-size:14px">
+                <option value="daily" {{ 'selected' if cfg.auto_invest.schedule == 'daily' else '' }}>每个交易日</option>
+                <option value="weekly" {{ 'selected' if cfg.auto_invest.schedule == 'weekly' else '' }}>每周</option>
+            </select>
+        </div>
+        <div class="param-row">
+            <label class="pname">执行时间</label>
+            <input id="ai_time" type="time" value="{{ cfg.auto_invest.trade_time }}" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 12px;border-radius:8px;font-size:14px">
+        </div>
+        <div class="param-row">
+            <label class="pname">每次投入金额</label>
+            <input id="ai_amount" type="number" min="0" step="100" value="{{ cfg.auto_invest.base_amount }}" style="width:140px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 12px;border-radius:8px;font-size:14px">
+            <span class="text-muted">元</span>
+        </div>
+        <div class="param-row">
+            <label class="pname">最大持仓数</label>
+            <input id="ai_maxpos" type="number" min="1" max="20" step="1" value="{{ cfg.auto_invest.max_positions }}" style="width:100px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 12px;border-radius:8px;font-size:14px">
+            <span class="text-muted">只</span>
+        </div>
+    </div>
+
+    <!-- 组合策略投资 -->
+    <div class="card">
+        <h2>📊 组合策略投资</h2>
+        <div class="param-row">
+            <label class="pname">启用组合策略</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="checkbox" id="pf_enabled" {% if cfg.portfolio.enabled %}checked{% endif %} style="width:16px;height:16px;accent-color:var(--accent)">
+                <span class="text-muted">按权重分配资金并定期再平衡</span>
+            </label>
+        </div>
+        <div class="param-row">
+            <label class="pname">再平衡频率</label>
+            <select id="pf_rebalance" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 12px;border-radius:8px;font-size:14px">
+                <option value="monthly" {{ 'selected' if cfg.portfolio.rebalance == 'monthly' else '' }}>每月</option>
+                <option value="quarterly" {{ 'selected' if cfg.portfolio.rebalance == 'quarterly' else '' }}>每季度</option>
+            </select>
+        </div>
+        <div class="param-row">
+            <label class="pname">风险偏好</label>
+            <select id="pf_risk" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 12px;border-radius:8px;font-size:14px">
+                <option value="conservative" {{ 'selected' if cfg.portfolio.risk_level == 'conservative' else '' }}>稳健型</option>
+                <option value="balanced" {{ 'selected' if cfg.portfolio.risk_level == 'balanced' else '' }}>均衡型</option>
+                <option value="aggressive" {{ 'selected' if cfg.portfolio.risk_level == 'aggressive' else '' }}>进取型</option>
+            </select>
+        </div>
+
+        <h3 style="font-size:13px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin:20px 0 12px">策略权重分配</h3>
+        <div>
+            {% for t in traders %}
+            <div class="param-row" style="align-items:center">
+                <label class="pname" title="{{ t.key }}">{{ t.name }}</label>
+                <input type="number" min="0" max="100" step="1" value="{{ t.pct }}" data-alloc="{{ t.key }}" oninput="updateTotal()" style="width:90px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:8px;font-size:14px">
+                <span class="text-muted">%</span>
+            </div>
+            {% endfor %}
+        </div>
+        <p class="text-muted" style="margin-top:8px">合计：<strong id="allocTotal" style="color:var(--green)">100%</strong>（保存时自动归一化为 100%）</p>
+    </div>
+
+    <div class="flex-between" style="margin-bottom:24px">
+        <button id="saveBtn" onclick="saveSettings()">保存设置</button>
+        <span id="saveStatus" class="text-muted"></span>
+    </div>
+</section>
+
+<!-- ============== 标签二：日志 & 周报 ============== -->
+<section id="panel-logs" class="tab-panel" style="display:none">
+    <div class="flex-between" style="margin:8px 0 14px">
+        <div>
+            <h2 style="font-size:18px">周报 &amp; 操作中心</h2>
+            {% if reports %}<span class="text-muted">共 {{ reports|length }} 期周报</span>{% endif %}
+            <span class="src-date">数据截至 {{ as_of_date() }}</span>
+        </div>
+        <button class="help-toggle" onclick="document.getElementById('logsHelp').classList.toggle('show')">? 帮助</button>
+    </div>
+
+    <div class="help-box" id="logsHelp">
+        <p><strong>🤖 AI 周报</strong>：每周由 DeepSeek 分析所有操盘手表现，给出排名和策略调整建议。点击卡片展开查看详情。</p>
+        <p><strong>📊 排名</strong>：AI 综合收益率、<span class="term" data-tip="回撤：从最高点回落到最低点的最大跌幅，衡量策略抗跌能力。">回撤</span>、<span class="term" data-tip="夏普比率：每单位风险获得的超额收益，越高越优。">夏普比率</span>打分，不仅看绝对收益。</p>
+        <p><strong>💡 提示</strong>：排名不是唯一标准。有些策略在牛市中强、有些在熊市中抗跌。关键是找到适合当前行情的策略。</p>
+    </div>
+
+    {% if not ai_report_enabled %}
+    <div class="tip-card" style="background:var(--yellow-bg);border-color:rgba(245,158,11,.3);color:var(--yellow)">
+        🚧 <strong>AI 周报功能暂未开通</strong>：该功能正在准备中，当前无法生成新周报。下方历史周报仍可正常查看。
+    </div>
+    {% endif %}
+
+    <!-- 快捷操作 -->
+    <div class="card" style="background:linear-gradient(135deg,rgba(56,189,248,.05),rgba(129,140,248,.05))">
+        <h2>快捷操作</h2>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+            <button id="genReportBtn" onclick="generateReport()" {% if not ai_report_enabled %}disabled style="opacity:.5;cursor:not-allowed"{% endif %}>🤖 生成新周报</button>
+            <button onclick="triggerTrade()">📈 执行今日交易</button>
+            <input type="date" id="runDate" value="" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:9px 14px;border-radius:8px;font-size:14px">
+            <button onclick="runDateTrade()">📅 回跑指定日</button>
+        </div>
+        <div id="opResult" style="margin-top:12px;font-size:13px"></div>
+    </div>
+
+    <!-- 周报列表 -->
+    {% if reports %}
+    {% set ns = namespace(current_month='') %}
+    {% for r in reports %}
+    {% set month = r.week_start[:7] %}
+    {% if month != ns.current_month %}
+    {% set ns.current_month = month %}
+    <div style="color:var(--text3);font-size:13px;font-weight:600;letter-spacing:.1em;margin:24px 0 12px;padding-left:4px">
+        {{ month[:4] }}年{{ month[5:7] }}月
+    </div>
+    {% endif %}
+
+    <div class="card report-card" style="padding:0;overflow:hidden;cursor:default">
+        <div class="flex-between report-header" onclick="toggleReport(this)" style="padding:16px 20px;cursor:pointer;user-select:none;transition:.2s">
+            <div style="display:flex;align-items:center;gap:16px">
+                <span class="collapse-icon" style="font-size:12px;color:var(--text3);transition:.2s">▶</span>
+                <strong style="font-size:15px">{{ r.week_start }} ~ {{ r.week_end }}</strong>
+                {% if r.rankings %}
+                <span style="font-size:12px;color:var(--text3)">
+                    🥇 {{ r.rankings[0].get('name','') if r.rankings|length > 0 else '' }}
+                    {% if r.rankings|length > 1 %} · 🥈 {{ r.rankings[1].get('name','') }}{% endif %}
+                    {% if r.rankings|length > 2 %} · 🥉 {{ r.rankings[2].get('name','') }}{% endif %}
+                </span>
+                {% endif %}
+            </div>
+            <span style="font-size:12px;color:var(--text3)">{{ r.rankings|length if r.rankings else 0 }} 人</span>
+        </div>
+        <div class="report-body" style="display:none;padding:0 20px 20px">
+            {% if r.summary %}
+            <div style="background:rgba(56,189,248,.04);border-radius:8px;padding:14px;margin-bottom:16px;font-size:14px;color:var(--text);line-height:1.8">
+                <strong style="color:var(--accent)">市场概况</strong><br>{{ r.summary }}
+            </div>
+            {% endif %}
+            {% if r.rankings %}
+            <table>
+                <thead><tr><th style="width:50px">排名</th><th style="width:120px">操盘手</th><th style="width:60px">评分</th><th>AI 分析</th></tr></thead>
+                <tbody>
+                {% for rank in r.rankings %}
+                <tr>
+                    <td>{{ '🥇' if rank.get('rank',0)==1 else '🥈' if rank.get('rank',0)==2 else '🥉' if rank.get('rank',0)==3 else rank.get('rank',loop.index) }}</td>
+                    <td><strong>{{ rank.get('name','') }}</strong></td>
+                    <td><span class="badge badge-{{ 'buy' if rank.get('score',0) >= 70 else 'rej' if rank.get('score',0) < 60 else 'fill' }}">{{ rank.get('score','-') }}</span></td>
+                    <td style="color:var(--text2);font-size:13px;line-height:1.7;padding:8px 10px">{{ rank.get('comment','') }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+    <div style="margin-top:16px">
+        <button class="ghost" onclick="toggleAllReports()" style="font-size:12px;padding:6px 14px">展开全部</button>
+    </div>
+    {% else %}
+    <div class="card" style="text-align:center;padding:48px">
+        <p style="font-size:18px;color:var(--text2);margin-bottom:8px">📋 暂无周报</p>
+        <p class="text-muted">点击上方"生成新周报"立即生成，或等待周五自动生成。</p>
+    </div>
+    {% endif %}
+</section>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+var AI_REPORT_ENABLED = {{ 'true' if ai_report_enabled else 'false' }};
+var ACTIVE_TAB = "{{ active_tab or 'invest' }}";
+
+function switchTab(name) {
+    document.getElementById('panel-invest').style.display = (name === 'invest') ? 'block' : 'none';
+    document.getElementById('panel-logs').style.display = (name === 'logs') ? 'block' : 'none';
+    document.getElementById('tabBtn-invest').classList.toggle('active', name === 'invest');
+    document.getElementById('tabBtn-logs').classList.toggle('active', name === 'logs');
+    try { history.replaceState(null, '', name === 'logs' ? '/settings#logs' : '/settings'); } catch (e) {}
+}
+
+/* ---------- 投资设置：权重合计 ---------- */
+function updateTotal() {
+    var sum = 0;
+    document.querySelectorAll('[data-alloc]').forEach(function (el) { sum += Number(el.value) || 0; });
+    var el = document.getElementById('allocTotal');
+    el.textContent = sum + '%';
+    el.style.color = (sum === 100) ? 'var(--green)' : 'var(--yellow)';
+}
+
+function collectConfig() {
+    var alloc = {};
+    document.querySelectorAll('[data-alloc]').forEach(function (el) {
+        alloc[el.getAttribute('data-alloc')] = Number(el.value) || 0;
+    });
+    return {
+        auto_invest: {
+            enabled: document.getElementById('ai_enabled').checked,
+            schedule: document.getElementById('ai_schedule').value,
+            trade_time: document.getElementById('ai_time').value,
+            base_amount: Number(document.getElementById('ai_amount').value) || 0,
+            max_positions: Number(document.getElementById('ai_maxpos').value) || 0
+        },
+        portfolio: {
+            enabled: document.getElementById('pf_enabled').checked,
+            rebalance: document.getElementById('pf_rebalance').value,
+            risk_level: document.getElementById('pf_risk').value,
+            allocation: alloc
+        }
+    };
+}
+
+async function saveSettings() {
+    var btn = document.getElementById('saveBtn');
+    var status = document.getElementById('saveStatus');
+    btn.disabled = true; btn.textContent = '保存中...'; status.textContent = '';
+    try {
+        var cfg = collectConfig();
+        var resp = await fetch('/api/settings/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json; charset=utf-8' },
+            body: JSON.stringify(cfg)
+        });
+        var r = await resp.json();
+        if (r.ok) { showToast('设置已保存', 'ok'); status.textContent = '已保存'; }
+        else { showToast('保存失败: ' + (r.error || ''), 'err'); status.textContent = '保存失败'; }
+    } catch (e) {
+        showToast('请求失败: ' + e.message, 'err'); status.textContent = '请求失败';
+    } finally {
+        btn.disabled = false; btn.textContent = '保存设置';
+        setTimeout(function () { status.textContent = ''; }, 3000);
+    }
+}
+
+/* ---------- 日志 & 周报 ---------- */
+function toggleReport(header) {
+    var body = header.nextElementSibling;
+    var icon = header.querySelector('.collapse-icon');
+    body.style.display = body.style.display === 'none' ? 'block' : 'none';
+    icon.textContent = body.style.display === 'none' ? '▶' : '▼';
+}
+var allReportsOpen = false;
+function toggleAllReports() {
+    allReportsOpen = !allReportsOpen;
+    document.querySelectorAll('.report-body').forEach(function (b) { b.style.display = allReportsOpen ? 'block' : 'none'; });
+    document.querySelectorAll('.report-header .collapse-icon').forEach(function (i) { i.textContent = allReportsOpen ? '▼' : '▶'; });
+    var btn = document.querySelector('.ghost');
+    if (btn) btn.textContent = allReportsOpen ? '收起全部' : '展开全部';
+}
+
+async function triggerTrade() {
+    var el = document.getElementById('opResult');
+    el.innerHTML = '⏳ 执行中...';
+    var resp = await fetch('/api/control/trigger', {method:'POST'});
+    var r = await resp.json();
+    el.innerHTML = '<span style="color:' + (r.ok?'var(--green)':'var(--red)') + '">' + r.date + ': ' + r.filled + '/' + r.total_orders + ' 笔成交</span>';
+}
+async function runDateTrade() {
+    var date = document.getElementById('runDate').value;
+    if (!date) return alert('请先选择日期');
+    var el = document.getElementById('opResult');
+    el.innerHTML = '⏳ 回跑 ' + date + '...';
+    var resp = await fetch('/api/control/run_date', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({date: date})});
+    var r = await resp.json();
+    el.innerHTML = '<span style="color:' + (r.ok?'var(--green)':'var(--red)') + '">' + r.date + ': ' + r.filled + '/' + r.total_orders + ' 笔成交</span>';
+}
+async function generateReport() {
+    if (!AI_REPORT_ENABLED) { showToast('该功能暂未开通', 'err'); return; }
+    var el = document.getElementById('opResult');
+    el.innerHTML = '🤖 AI 分析中...';
+    try {
+        var resp = await fetch('/api/control/trigger_report', {method:'POST'});
+        var r = await resp.json();
+        el.innerHTML = r.ok ? '周报已生成，刷新中...' : '生成失败: ' + r.error;
+        if (r.ok) setTimeout(function () { location.reload(); }, 1000);
+    } catch (e) { el.innerHTML = '请求失败: ' + e; }
+}
+
+/* ---------- 初始化 ---------- */
+updateTotal();
+switchTab(ACTIVE_TAB);
+</script>
+{% endblock %}

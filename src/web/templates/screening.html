@@ -61,7 +61,19 @@
                 color: #ef4444; margin-bottom: 16px; font-size: 13px; }
 </style>
 
-<h2>选股漏斗 <span class="page-subtitle">5步筛选 → 安全可做清单</span></h2>
+<div class="flex-between" style="margin-bottom:16px">
+    <h2><span class="term" data-tip="选股漏斗：把全市场股票逐层过滤，只留下同时满足多道门槛的「安全可做」标的。">选股漏斗</span> <span class="page-subtitle">5步筛选 → 安全可做清单</span> <span class="src-date">数据截至 {{ as_of_date() }}</span></h2>
+    <button class="help-toggle" onclick="document.getElementById('helpBox').classList.toggle('show')">? 使用指南</button>
+</div>
+
+<div class="help-box" id="helpBox">
+    <p><strong>🧰 选股漏斗是什么？</strong></p>
+    <p>• 把全市场几千只股票一层层过滤，只留下同时满足量价、财务、资金、赛道、风险五道门槛的「安全可做」标的。</p>
+    <p>• <strong>每一步都会淘汰一批</strong>：数字代表该步输入，括号里是这一步被刷掉的数量。最终通过越少越严格。</p>
+    <p>• <strong>评分</strong>综合五步表现：越高越稳健，0.8 以上为优，0.5 以下需谨慎。</p>
+    <p>• 选股范围（全市场 / 沪深300 / 中证500）与启用步骤都可在上方调整，点「运行漏斗」重新计算（约 10-30 秒）。</p>
+    <p style="margin-top:8px;color:var(--yellow)">⚠ 漏斗结果仅为学习用筛选，不构成投资建议。</p>
+</div>
 
 <div class="screening-controls">
     <div>
@@ -81,7 +93,7 @@
     </div>
     <div style="flex:1"></div>
     <div style="font-size:11px;color:var(--text3);line-height:1.6">
-        ①量价+PE &nbsp; ②财务排雷 &nbsp; ③资金验证 &nbsp; ④赛道择优 &nbsp; ⑤风险过滤
+        <span class="term" data-tip="步骤①：用量价形态与市盈率(PE)做第一道初筛。">①量价+PE</span> &nbsp; <span class="term" data-tip="步骤②：排查财务造假、连续亏损等雷区。">②财务排雷</span> &nbsp; <span class="term" data-tip="步骤③：验证是否有主力资金流入。">③资金验证</span> &nbsp; <span class="term" data-tip="步骤④：优选所处赛道景气度高的行业。">④赛道择优</span> &nbsp; <span class="term" data-tip="步骤⑤：过滤高波动、高质押等风险个股。">⑤风险过滤</span>
     </div>
 </div>
 
@@ -104,49 +116,51 @@
 </div>
 
 <script>
-async function runScreening() {
-    var btn = document.getElementById('runBtn');
-    btn.disabled = true; btn.textContent = '运行中...';
-    document.getElementById('errorBox').style.display = 'none';
-    document.getElementById('resultArea').style.display = 'none';
-    document.getElementById('loadingBox').style.display = 'block';
+function showError(msg) {
+    var el = document.getElementById('errorBox');
+    el.style.display = 'block';
+    el.textContent = msg;
+}
 
-    var universe = document.getElementById('universeSelect').value;
-    var steps = document.getElementById('stepsInput').value;
+function resetRunBtn(btn) {
+    btn.disabled = false; btn.textContent = '▶ 运行漏斗';
+}
 
-    try {
-        var resp = await fetch('/screening/api/run?universe=' + universe + '&steps=' + steps);
-        var data = await resp.json();
-        document.getElementById('loadingBox').style.display = 'none';
+function sleep(ms) {
+    return new Promise(function(r) { setTimeout(r, ms); });
+}
 
-        if (!data.ok) {
-            showError('请求失败');
-            return;
-        }
+// 解析并渲染漏斗结果（done 态的完整 payload 与旧结构一致）
+function renderScreeningResult(data) {
+    if (data.errors && data.errors.length > 0) {
+        var errDiv = document.getElementById('errorBox');
+        errDiv.style.display = 'block';
+        errDiv.textContent = '警告: ' + data.errors.join('; ');
+    }
 
-        if (data.errors && data.errors.length > 0) {
-            var errDiv = document.getElementById('errorBox');
-            errDiv.style.display = 'block';
-            errDiv.textContent = '警告: ' + data.errors.join('; ');
-        }
+    // Summary
+    var summary = document.getElementById('summary');
+    var steps = data.step_stats || {};
+    var stepHtml = '<div class="stat-card"><div class="val">' + data.input_count + '</div><div class="lbl">输入</div></div>';
+    for (var s in steps) {
+        var st = steps[s];
+        var label = {1:'量价+PE', 2:'财务排雷', 3:'资金验证', 4:'赛道', 5:'风险'}[s] || '步骤'+s;
+        var dropped = st.dropped != null ? st.dropped : 0;
+        stepHtml += '<div class="stat-card"><div class="val">' + st.after + '</div><div class="lbl">' + label + ' (-' + dropped + ')</div></div>';
+    }
+    stepHtml += '<div class="stat-card"><div class="val" style="color:#22c55e">' + data.output_count + '</div><div class="lbl">最终通过</div></div>';
+    stepHtml += '<div class="stat-card"><div class="val">' + data.duration_ms + 'ms</div><div class="lbl">耗时</div></div>';
+    summary.innerHTML = stepHtml;
 
-        // Summary
-        var summary = document.getElementById('summary');
-        var steps = data.step_stats || {};
-        var stepHtml = '<div class="stat-card"><div class="val">' + data.input_count + '</div><div class="lbl">输入</div></div>';
-        for (var s in steps) {
-            var st = steps[s];
-            var label = {1:'量价+PE', 2:'财务排雷', 3:'资金验证', 4:'赛道', 5:'风险'}[s] || '步骤'+s;
-            stepHtml += '<div class="stat-card"><div class="val">' + st.after + '</div><div class="lbl">' + label + ' (-' + st.dropped + ')</div></div>';
-        }
-        stepHtml += '<div class="stat-card"><div class="val" style="color:#22c55e">' + data.output_count + '</div><div class="lbl">最终通过</div></div>';
-        stepHtml += '<div class="stat-card"><div class="val">' + data.duration_ms + 'ms</div><div class="lbl">耗时</div></div>';
-        summary.innerHTML = stepHtml;
-
-        // Table
-        var tbody = document.getElementById('passedBody');
-        tbody.innerHTML = '';
-        (data.passed || []).forEach(function(a) {
+    // Table
+    var tbody = document.getElementById('passedBody');
+    tbody.innerHTML = '';
+    if (!data.passed || data.passed.length === 0) {
+        var emptyRow = document.createElement('tr');
+        emptyRow.innerHTML = '<td colspan="5" style="text-align:center;color:var(--text3);padding:18px">本批次暂无通过全部步骤的标的，可放宽步骤或换标的池重试</td>';
+        tbody.appendChild(emptyRow);
+    } else {
+        data.passed.forEach(function(a) {
             var row = document.createElement('tr');
 
             var stepsHtml = a.steps.map(function(s) {
@@ -166,20 +180,87 @@ async function runScreening() {
                 '<td>' + stepsHtml + '</td>';
             tbody.appendChild(row);
         });
-
-        document.getElementById('resultArea').style.display = 'block';
-    } catch(e) {
-        document.getElementById('loadingBox').style.display = 'none';
-        showError('请求异常: ' + e.message);
     }
 
-    btn.disabled = false; btn.textContent = '▶ 运行漏斗';
+    document.getElementById('resultArea').style.display = 'block';
 }
 
-function showError(msg) {
-    var el = document.getElementById('errorBox');
-    el.style.display = 'block';
-    el.textContent = msg;
+// 轮询任务状态，最长等待 maxMs
+async function pollScreening(taskId, btn, maxMs) {
+    var interval = 1500;
+    var elapsed = 0;
+    var loadingText = document.querySelector('#loadingBox div:last-child');
+    while (elapsed < maxMs) {
+        await sleep(interval);
+        elapsed += interval;
+        try {
+            var r = await fetch('/screening/api/status?task_id=' + encodeURIComponent(taskId));
+            var st = await r.json();
+        } catch (e) {
+            document.getElementById('loadingBox').style.display = 'none';
+            showError('请求异常: ' + e.message);
+            resetRunBtn(btn);
+            return;
+        }
+
+        if (st.status === 'running') {
+            if (loadingText) loadingText.textContent = '筛选中... 已等待 ' + Math.round(elapsed / 1000) + ' 秒';
+            continue;
+        }
+        if (st.status === 'error') {
+            document.getElementById('loadingBox').style.display = 'none';
+            showError(st.error || '漏斗执行失败');
+            resetRunBtn(btn);
+            return;
+        }
+        if (st.status === 'unknown') {
+            document.getElementById('loadingBox').style.display = 'none';
+            showError(st.error || '任务丢失，请重新运行漏斗');
+            resetRunBtn(btn);
+            return;
+        }
+        if (st.status === 'done') {
+            document.getElementById('loadingBox').style.display = 'none';
+            renderScreeningResult(st);
+            resetRunBtn(btn);
+            return;
+        }
+    }
+    document.getElementById('loadingBox').style.display = 'none';
+    showError('漏斗执行超时（>' + Math.round(maxMs / 1000) + '秒），请减小标的池或只选部分步骤后重试');
+    resetRunBtn(btn);
+}
+
+async function runScreening() {
+    var btn = document.getElementById('runBtn');
+    btn.disabled = true; btn.textContent = '运行中...';
+    document.getElementById('errorBox').style.display = 'none';
+    document.getElementById('resultArea').style.display = 'none';
+    document.getElementById('loadingBox').style.display = 'block';
+    var loadingText = document.querySelector('#loadingBox div:last-child');
+    if (loadingText) loadingText.textContent = '已提交，正在筛选...';
+
+    var universe = document.getElementById('universeSelect').value;
+    var steps = document.getElementById('stepsInput').value;
+
+    try {
+        var resp = await fetch('/screening/api/run?universe=' + encodeURIComponent(universe) + '&steps=' + encodeURIComponent(steps));
+        var data = await resp.json();
+
+        if (!data.ok || !data.task_id) {
+            document.getElementById('loadingBox').style.display = 'none';
+            showError('请求失败: ' + (data.error || '未知错误'));
+            resetRunBtn(btn);
+            return;
+        }
+
+        // 后端已立即返回 task_id，转交轮询
+        await pollScreening(data.task_id, btn, 180000);
+    } catch (e) {
+        document.getElementById('loadingBox').style.display = 'none';
+        showError('请求异常: ' + e.message);
+        resetRunBtn(btn);
+    }
 }
 </script>
 {% endblock %}

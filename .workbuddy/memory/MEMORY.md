@@ -1,130 +1,57 @@
 # InvestProject（AITrader）项目长期约定
 
-## 运行时可写路径（部署关键约定）
-- **所有运行时可写状态必须走 `src/runtime.py`**，不要用 `Path(__file__).parent.parent.../config` 之类硬编码相对路径。
-  - `data_dir()`：本地回落仓库根，托管平台回落 `POCKETBAY_DATA_DIR`（如 `/data`）
-  - `config_path("xxx.yaml")`：返回可写路径，首启从包内 `config/` 播种
-  - `db_url("data/simulation.db")`：优先 `DATABASE_URL`，否则 SQLite 落可写目录
-- **页面可改的配置**（`traders.yaml`、`watchlist.yaml`）属于运行时状态，不要申报为平台"敏感配置文件"——会被只读挂载导致写入失败。
-- 纯只读配置（`settings.yaml`、`screening.yaml`、`scenarios.yaml`）留在包内 `config/`，用 `src/config.py:CONFIG_DIR` 读。
+## 运行时可写路径
+- 所有运行时可写状态走 `src/runtime.py`：`data_dir()`（本地回落仓库根，平台回落 `POCKETBAY_DATA_DIR`）、`config_path("x.yaml")`（可写，首启从包内 `config/` 播种）、`db_url()`（优先 `DATABASE_URL`，否则 SQLite 落可写目录）。
+- 页面可改配置（`traders.yaml`/`watchlist.yaml`）属运行时状态，勿申报为平台"敏感配置文件"（会只读挂载致写失败）。只读配置（`settings.yaml`/`screening.yaml`/`scenarios.yaml`）留包内 `config/`，用 `src/config.py:CONFIG_DIR` 读。
 
-## 依赖清单约定
-- **根目录 `requirements.txt` 是部署平台的唯一依赖清单**，必须包含 web 服务最低集：`fastapi` / `uvicorn` / `jinja2`。
-- 测试与未使用依赖放 `requirements-dev.txt`，不要混进生产清单（构建时长）。
-- 注意：`fastapi` 核心不带 `jinja2`，用了 `Jinja2Templates` 就必须显式声明。
+## 依赖清单
+- 根 `requirements.txt` 是部署唯一依赖清单，必须含 `fastapi`/`uvicorn`/`jinja2`（fastapi 核心不带 jinja2，用了 Jinja2Templates 必须显式声明）。测试/未用依赖放 `requirements-dev.txt`。
 
-## 代码托管
-- 远端 `origin` = <https://github.com/freeEasyLoope/AiTraderPlatform.git>，主分支 `main`。
-- 本机 `credential.helper=manager`（Windows 凭据管理器）已缓存凭据。
-  需要非交互推送时加 `GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never`，避免挂死等输入。
-- **该仓库是公开仓库**：任何提交前都要确认不含真实密钥（只允许引用环境变量名与占位符）。
+## 代码托管与部署
+- 远端 `origin`=github.com/freeEasyLoope/AiTraderPlatform（公开仓库，主分支 main，不含真实密钥）。本机 `credential.helper=manager`；非交互推送加 `GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never`。
+- PocketBay（`*.pocketbay.app`）：用 `~/.workbuddy/skills/pocketbay-deploy/`，`project_slug=aitrader`，language=python，勿传 framework_hint/勿写 Dockerfile；会注入 `POCKETBAY_DATA_DIR=/data`（选数据库方案 D 落持久卷）；打包排除 `*.db`/`logs/`/缓存；配对会话可复用（同会话重复 upload 即发新版）。
+- WorkBuddy 发布（`*.app.workbuddy.host`）：用 `workbuddy_sites_deploy`，勿混用 PocketBay 技能。
+- 启动单进程，勿加 `--workers`（每 worker 各起 APScheduler → 重复下单）。密钥不进包，LLM 无 key 时优雅降级（不 500）。
 
-## 部署目标（两个平台，别混用）
-- **PocketBay**（`*.pocketbay.app`）—— 用用户级技能 `~/.workbuddy/skills/pocketbay-deploy/`，走官方 HTTP 协议 + 配对页。
-- **WorkBuddy App 发布**（`*.app.workbuddy.host`）—— 用 `workbuddy_sites_deploy` 工具。
-- 用户说"部署到 pocketbay / 不是 workbuddy 那个"时，**不要**再用 `workbuddy_sites_deploy`。
-- **密钥不进包**：LLM 接口在无 `ANTHROPIC_API_KEY` 时必须优雅降级，不允许 500。禁止把 key 写进源码/yaml。
-- 启动命令保持**单进程**，不要加 `--workers`（每个 worker 会各起一个 APScheduler，重复下单）。
+## 启动与探活铁律
+- 启动路径(lifespan)与探活路径绝不允许不受控网络等待。先看日志有无 `Application startup complete`。
+- 数据源探测用 `runtime.run_with_timeout(fn, timeout, default)`（守护线程+join 超时）；baostock/akshare 裸调等于把可用性交给对端。首屏只读缓存绝不等待；探测 15s 上界，超时回落 MockDataProvider（预算别太紧，误回落 mock 写入虚构价格更严重）。
+- lifespan 非必需装配（调度器等）一律 try/except，任何可选功能不得阻断 web 启动。
+- 勿在可能阻塞的调用外替换全局 sys.stdout；压第三方库噪声用常驻行过滤器（`data/baostock_utils.py:install_quiet_stdout()`）。
 
-### PocketBay 已实测事实
-- 线上地址：**<https://aitrader.pocketbay.app>**（`project_slug=aitrader`；`language=python`；平台自动识别入口，**不要传 `framework_hint`**、**不要写 Dockerfile**）
-- **会注入 `POCKETBAY_DATA_DIR=/data`**（与 WorkBuddy 沙箱不同）→ 选数据库方案 D 即可零改动落持久卷；`DATABASE_URL` 未注入
-- 打包必须排除本地 `*.db` / `logs/` / 缓存；数据库选 **D（文件/SQLite 改用 /data 持久卷）**
-- **配对会话可复用**：同一会话重复 `upload` 即发布新版本，不需要用户重新配对
-- 协议正文说 `client_ide` / `client_llm` "可选"是错的，实际 **422 必填**，用 `"other"` + `*_other` 字段
+## 数据源接入
+- baostock 登录只走 `open_bs()/close_bs()`（带超时+熔断），禁裸调 `bs.login()`。
+- 历史日线 `kline_http.py`：新浪 KLine→腾讯 fqkline→baostock；腾讯成交量单位「手」需 ×100。
+- 日期边界用 `runtime.normalize_date()`；紧凑 `YYYYMMDD` 与 `YYYY-MM-DD` 字符串比较会静默失数。
+- 实时行情 `realtime_http.py`：腾讯 `qt.gtimg.cn` 批量→腾讯 `web.ifzq.gtimg.cn`；新浪 `hq.sinajs.cn` 仅兜底。路由层勿直连 `hq.sinajs.cn`，用 `fetch_sina_format()`。回落 Mock 会写虚构价格——部署后须确认 `/api/health` 的 realtime=true。
 
-## 事件循环约定
-- 项目全部是阻塞式 IO（urllib / baostock / akshare），**路由处理器凡是内部做网络或重计算的，一律用同步 `def`**（FastAPI 自动丢线程池），不要写 `async def` 却在里面做阻塞调用——会冻结单进程服务，导致平台探活失败。
+## 部署环境差异（同一份代码出口可达性不同）
+- WorkBuddy 沙箱：注入 PORT、无 POCKETBAY_DATA_DIR/DATABASE_URL；可用新浪实时/腾讯 KLine，baostock 永久挂起（PE/PB/分红/公告离线降级）。TCP 探测不可信，用 `GET /api/diag` 验真。
+- PocketBay：baostock 可用（PE/PB 通）；新浪实时被拒→靠腾讯多源链。外壳页+embed 帧，应用会被休眠（POST /.pocketbay/wake 唤醒）；应用侧只能保活+让失败可见。
 
-## 启动路径铁律（踩过两次坑）
-- **启动路径（lifespan）与探活路径上，绝不允许出现不受控的网络等待。** 平台只会报"服务不可达"，真实原因往往是"卡住"，报错信息会把人引向错误方向——先看日志里有没有 `Application startup complete`。
-- **数据源探测必须设界**：`baostock` / `akshare` 都不接受超时参数，裸调等于把进程可用性交给对端网络。统一用 `src/runtime.py:run_with_timeout(fn, timeout, default)`（守护线程 + join 超时）。
-  - 首屏市场环境：后台刷新 + 120s 计算上界 + 指数退避，首屏只读缓存，绝不等待。
-  - 数据源探测：15s 上界，超时回落 `MockDataProvider`。**预算不要给太紧**——误回落 mock 会写入虚构价格，比多等几秒严重。
-- **lifespan 里的非必需装配（调度器等）一律包 `try/except`**：任何可选功能出问题都不允许阻断 web 启动。
-- **不要在可能阻塞的调用外面替换全局 `sys.stdout`**：一旦挂死，重定向永久生效，进程日志整段静音，线上无法排障。要压第三方库噪声，用常驻**行过滤器**（见 `data/baostock_utils.py:install_quiet_stdout()`）。
-- **数据页上的网络等待用"缓存 + 墙钟预算"解决**，不要为了快而牺牲数据正确性。参考 `fundamentals._try_baostock`：按 symbol 缓存（含**负缓存**）+ `budget` 上限 + 命中缓存时不登录。
+## Web 层约定
+- 页面路由写全量路径，禁「prefix+get("/")」尾斜杠形态（307→明文 http→混合内容拦截→点没反应）。导航项目标不依赖 3xx。
+- `/static/*` 引用带内容指纹 `?v={{ static_version() }}`（边缘缓存 max-age=14400，HTML no-store）；改静态文件后确认指纹随变。
+- 动态响应 `Cache-Control: no-store`（`main.py:DynamicNoStore` 纯 ASGI 中间件）。
+- `/api/ping` 仅保活（无外部探测）；`/api/health` 真探数据源；不可互替。
+- 站内跳转是异步局部加载（base.html `asyncNav`）：交换边界 `#page-root` 与 `#page-scripts` 分开；页面脚本行首 `let/const` 会二次注入报"已声明"→用 `deLexicalize()` 降级为 `var`；`#navLoading` 基态必须隐藏（仅 `.on` 显示），否则永久盖屏；兜底整页导航；pushState 后自更新导航高亮。
+- 导航状态灯：行情=realtime||sina、历史=history||baostock、财务=tushare（勿只看 sina）。
+- A 股涨跌配色待用户决定（现涨绿跌红；`.red`/`.green` 兼承载错误/成功语义，不能直接交换 CSS 变量，须逐个翻转三元式）。
+- 验证线上页面：断言 DOM 类名≠验证界面状态（须读 getComputedStyle 的 visibility/opacity/display）；WebFetch 有 15min 缓存（加 `?_ts=N`）；静态资源看响应头 `age`；curl 200≠点了有反应，交互须真实浏览器（Playwright 已装，点后给 20s 容差，遇休眠先点唤醒）。
+- base.html 用内联 data-URI SVG favicon（避免 /favicon.ico 404）。
 
-## 数据源接入约定
-- **所有 baostock 登录必须走 `src/data/baostock_utils.py:open_bs()/close_bs()`**，禁止裸调 `bs.login()`。它带超时 + 熔断（不可用时立即返回 `None`），是唯一能防止进程被永久挂起拖死的入口。
-- **历史日线走 HTTP 多源**（`src/data/kline_http.py`）：新浪 KLine → 腾讯 fqkline → baostock 兜底。新浪与 baostock(adjustflag=2) 口径逐项一致；腾讯成交量单位是「手」，需 ×100。
-- **日期一律在边界归一化**：用 `runtime.normalize_date()`。只要有一处用字符串比较日期区间，传入紧凑格式 `YYYYMMDD` 就会**静默失数**（`"20240101" <= "2024-01-02"` 因 ASCII 顺序恒为 False），且 baostock 会判非法日期——两端都不抛异常，极难定位。回归测试见 `tests/test_data/test_dates.py`。
-- **实时行情走 `src/data/realtime_http.py` 的多源链**（腾讯 `qt.gtimg.cn` 批量 → 腾讯 `web.ifzq.gtimg.cn` 的 `qt` 节点），新浪 `hq.sinajs.cn` 只作最后兜底。
-  - 路由层**不要**再直连 `hq.sinajs.cn`：用 `fetch_sina_format(symbols)`，它产出与新浪**完全一致的线格式**，历史解析逻辑零改动。
-  - provider 层走 `SinaClient._fetch_batch`（新浪优先 + 熔断 + 多源兜底）。**回落 Mock 会写入虚构价格，比没有数据更危险**——部署后必须确认 `/api/health` 的 `realtime` 为 true。
+## 前端设计系统（UX 工作约定）
+- 配色/间距走 `style.css` 的 `:root` CSS 变量；主题切换用 `[data-theme]` 覆盖变量，头部早期脚本 `localStorage` 读主题避免闪烁；切主题派发 `themechange` 事件供 Chart.js 重取 `getComputedStyle` 色值后 `chart.update()`。
+- 新手引导：每页 `? 指标解释` 按钮 toggle `#helpBox`（`.help-box.show` 显示）。**已覆盖全部 12 个功能页**（含 screening、stock——stock.html 是最后补的，原缺）。
+- 名词提示：`.term[data-tip]` + 共享 tooltip 元素（`#termTip`），事件委托 mouseover 显示 / mouseout 自动隐藏，`initTermTips()` 在 asyncNav 边界外常驻。
+- 来源日期：`.src-date` 小药丸（带 🕐 before），模板用 `数据截至 {{ as_of_date() }}`（deps.py 注入全局 lambda，逐次渲染重算）。
+- AI 周报：`/reports` 模板用 `{% if not ai_report_enabled %}` 显示"🚧 AI 周报功能暂未开通"横幅并禁用生成按钮；按钮回调 `AI_REPORT_ENABLED` 常量二次拦截给 toast。banner 文案为 `AI 周报功能暂未开通`（勿与 JS toast `该功能暂未开通` 混淆——后者恒存在）。
 
-## 部署环境实测事实
-
-**⚠️ 两个托管的出口可达性完全不同——同一份代码，WorkBuddy 沙箱通新浪、PocketBay 通 baostock。所以任何单一数据源都不要假设可达。**
-
-### WorkBuddy 沙箱（`*.app.workbuddy.host`）
-- 会注入 `PORT`，但**未注入 `POCKETBAY_DATA_DIR` / `DATABASE_URL`** → 可写目录回落容器内应用目录，**不跨版本保留**；`PORT` 已用作"是否在平台运行"的判据（`web/main.py` 启用进程内调度）。
-- 本地 `data/simulation.db` 会随包上云（该工具不自动排除），线上首屏会带着本地历史。
-- **TCP 层探测不可信**（透明代理让任何主机 1ms「连上」），必须用 HTTP 层探测真实响应体（`GET /api/diag`）。
-  - **可用**：`hq.sinajs.cn` 实时行情（200/14ms）、`quotes.sina.cn` KLine（200/249ms）、`ifzq.gtimg.cn` 腾讯 fqkline（200/288ms）。
-  - **不可用**：baostock（永久挂起，不是快速失败）、网易历史日线（502）、东方财富（RemoteDisconnected）、Yahoo（TLS 被断）。
-  - 结论：实时行情 + 历史日线可用；baostock 派生的 PE/PB、分红、公告按"离线"优雅降级。
-- 线上地址：<https://aitrader-dashboard.app.workbuddy.host/>（`sandboxId=d682aa28e8414c3a973768af2c73f16b`；`language=python` / `port=8000` / `startCmd=python web.py`）。
-  - 注意：该目录默认 startCmd 探测会找 `main.py` 而报 `No such file or directory` —— 必须显式传 `startCmd`。
-
-### PocketBay（`*.pocketbay.app`）
-- **baostock 可用**（`/api/health` → `baostock:true`）→ PE/PB、分红、公告在 PocketBay 上是通的。
-- **新浪实时 `hq.sinajs.cn` 被拒**（403 / 超时）→ 必须靠 `realtime_http.py` 的腾讯多源链兜住，否则 provider 会回落 Mock。
-- 可达：腾讯 `qt.gtimg.cn`、腾讯 `web.ifzq.gtimg.cn`、`quotes.sina.cn` KLine、Yahoo。
-- 不可达：网易（502）、东方财富（RemoteDisconnected）。
-- **访问结构：外壳页 + embed 帧，且应用会被休眠**（这是"点了按钮没反应"的根因）。
-  - 网关按 `Sec-Fetch-Dest` 分流**同一域名**：顶层导航 → PocketBay 外壳页（`X-Frame-Options: DENY`、`frame-ancestors 'none'`、`no-store`）；iframe 请求 → 应用原始 HTML。
-  - 外壳装 `<iframe src="https://<slug>--e.pocketbay.app/<path>">`（`--e` = embed，**子路径保留**，深链接可用）。
-  - **休眠**：闲置会被休眠，再访问时外壳显示「此应用当前正在休眠」+「唤醒并继续」→ `POST /.pocketbay/wake`（实测 1.5s）。
-    若休眠发生在浏览过程中，页面内跳转请求会被挂住、界面无变化。
-  - 后果：**`urllib` 探测与浏览器看到的不是同一个文档**；控制台的 `X-Frame-Options` 报错属平台侧，应用无需（也不应）下发 framing 头。
-  - 应用侧只能"访问期间保活 + 让失败可见"（见 Web 层约定），平台休眠无法从应用侧消除。
-
-## Web 层约定（托管平台交互）
-- **页面路由一律写全量路径，禁止「prefix + `get("/")`」产生的尾斜杠形态**。
-  那会让 `/xxx` 落到 Starlette 的 307，而应用在平台 https 网关后面、redirect 里的
-  绝对 URL 是**明文 http**（`X-Forwarded-Proto` 未必被转发）→ https iframe 内跟随
-  会被浏览器按混合内容拦掉，表现就是"点了没反应/进不去"（`/screening` 真实踩过）。
-  推论：**导航项目标一律不允许依赖 3xx**——整页刷新能掩盖它，fetch 局部加载不能。
-  回归测试见 `tests/test_web/test_partial_nav.py::test_nav_targets_do_not_redirect`。
-- **`/static/*` 的资源引用必须带内容指纹**（`/static/style.css?v={{ static_version() }}`，
-  见 `src/web/deps.py`）。因为 `/static/` 是 `max-age=14400`、HTML 是 `no-store`，
-  平台边缘节点会缓存静态文件 → 部署后出现「新页面 + 旧 CSS」，样式改了最长 4 小时不生效，
-  且因为 HTML 确实变了，很容易被误判成"改动没起作用"。改 `/static/` 下任何文件后，
-  都要确认引用处的指纹跟着变。
-- **动态响应一律 `Cache-Control: no-store`**（`web/main.py:DynamicNoStore`，纯 ASGI 中间件；用 `BaseHTTPMiddleware` 会缓冲响应体、与 `StaticFiles` 的 `FileResponse` 组合易出问题）。实时看板 HTML 被缓存会显示过时价格。`/static/*` 保持可缓存。
-
-- **`GET /api/ping` 是保活端点**，只证明进程还在、**不做任何外部探测**；`/api/health` 会真的探数据源（秒级），不可互相替代。前端在页面可见且有操作时每 2 分钟打一次，30 分钟无操作停止。
-- **站内跳转是「异步局部加载」，不是整页导航**（`base.html` `asyncNav` / `style.css` `#navProgress`+`#navLoading`）。
-  - 交换边界：`#page-root`（内容，包住 `.container`）与 `#page-scripts`（页面脚本）**必须分开**——`screening.html` 的 `<script>` 写在 content 块里；且 `innerHTML` 插入的 `<script>` 不会执行，必须手动按块重放。
-  - **页面脚本禁止出现行首（零缩进）`let`/`const`**：同一文档二次注入会抛 `Identifier 'x' has already been declared`，整个脚本不执行 → 复访该页功能静默失效。前端用 `deLexicalize()` 把行首 let/const 降级为 `var`（函数体内的块级作用域不动）；清单被 `tests/test_web/test_partial_nav.py` 冻结。
-  - 加载态三件套：顶部不确定进度条 + 内容淡化（旧内容保留不白屏）+ 分阶段文案（正在加载 → 正在计算行情数据 → 应用可能正在唤醒，带已等待秒数）。
-    **加载提示必须「默认隐藏、靠 `.on` 显示」**：`#navLoading` 由 JS 创建后长期复用，
-    `hideLoading()` 只移除 `.on`；若基态可见、又没有 `.on` 规则，遮罩会从第一次跳转起
-    **永久盖屏**（真事故）。基态要 `visibility:hidden` + `opacity:0` + `pointer-events:none`，
-    且**不要做成全屏深色模糊**——那会把"加载慢"放大成"网站挂了"。
-    契约由 `test_loading_indicator_is_hidden_until_on_class` 守住。
-  - 兜底整页导航也可能被环境拦住（网关策略 / `location.assign` 抛错）：探针**必须先挂再导航**，
-    4s 内文档没变就把加载提示转成可操作态（「重试 / 刷新整页」）并解除导航锁，
-    不许永远停在加载态。
-  - 任何环节不符合预期（非 HTML 响应 / 缺边界 / 超时重试后仍失败）→ 回退整页导航，最坏不比原来差。**表单提交语义保持整页提交**，只补可见反馈。
-  - 悬停预取必须**串行 + 防抖**（单进程容器，并发预取会压住重计算页面）。pushState 后要**自己更新导航高亮**（服务端算的 `active` class 不会重算）。
-  - 复用：改这类页面时，新页面只要 `{% extends "base.html" %}` 就自动获得全部能力。
-- 导航状态灯口径：行情 = `realtime||sina`、历史 = `history||baostock`、财务 = `tushare`。**不要只看 `sina`**，否则多源链可用时状态灯仍是红的。
-- `base.html` 用内联 data-URI SVG favicon（原本没有 favicon，浏览器自动请求 `/favicon.ico` 会 404）。
-- **待用户决定**：A 股涨跌配色目前是"涨绿跌红"（国际惯例），中国习惯应为**涨红跌绿**。
-  注意 `.red`/`.green` 同时承载"错误/成功"语义（如 `'<span class="red">请选择起止日期</span>'`），
-  **不能直接交换 CSS 变量值**，只能逐个翻转"涨跌三元表达式"并收口到单一 helper。
-
-## 验证线上页面时的坑
-- **断言 DOM 类名 ≠ 验证界面状态**。曾出现「E2E 31/31 全绿但用户看到遮罩永不消失」：
-  测试只检查 `classList` 里没有 `on` 就算通过，而 CSS 里根本没有 `.on` 规则、
-  基态还是可见的 —— 类名变了，像素没变。**界面类断言必须读 `getComputedStyle`
-  的 `visibility`/`opacity`/`display`，并按 URL 归属请求，不能只信类名。**
-- **`WebFetch` 有 15 分钟自缓存**：验证部署后刷新必须加 `?_ts=N` 破缓存，否则会把"旧快照"误判成"改动没生效"（本项目误判过一次首页『行情加载中』）。
-- **静态资源被平台边缘缓存**：抓 `/static/xxx` 判断"改动是否生效"前，先加 `?ts=N`
-  看是不是缓存版本（响应头的 `age` 会暴露），否则会误判成部署失败。
-- **`curl`/`urllib` 返回 200 不能说明"点了有反应"**，交互问题必须用真实浏览器验。
-  本机可直接用：`NODE_PATH=%USERPROFILE%\.workbuddy\binaries\node\workspace\node_modules`
-  + `%LOCALAPPDATA%\ms-playwright\chromium-*\chrome-win64\chrome.exe`（Playwright 已装）。
-  要点：① 先 `page.frames()` 找到 `--e` 帧再读 DOM / 用坐标点；② 点击后给足 **20s** 容差，否则会把"慢"误判成"坏"；③ 遇休眠先点「唤醒并继续」。
+## 6 项 UX 体验优化（已完成并验证）
+1. 新手引导 onboarding（全功能页 help-box）✅
+2. 名词提示 term tooltips（`.term[data-tip]`）✅
+3. 投资设置（auto_invest + portfolio，/settings 表单 + invest.yaml）✅
+4. 来源日期 src-date 药丸（全数据页）✅
+5. AI 周报门控（/reports 未开通横幅）✅
+6. 主题切换（4 套 2026 调色板，`[data-theme]` 覆盖 shell 变量，Chart.js 经 `themechange` 重取色）✅
+- 验证：离线 Jinja 渲染 14 模板零错误 + 6 项断言全过（`verify_templates.py`）；进程内 TestClient 启动 + 关键路由全 200、数据源探测失败优雅降级（`boot_test.py`）。部署前用户曾要求"先解决这 6 项再部署"。

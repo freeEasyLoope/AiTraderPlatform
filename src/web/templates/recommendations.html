@@ -8,7 +8,7 @@
 <div class="section-header">
     <div>
         <h1>◎ 自选池分析</h1>
-        <p class="page-subtitle">{{ now }} · {{ symbols|length }} 只标的 · 6 位操盘手联合分析</p>
+        <p class="page-subtitle">{{ now }} · {{ symbols|length }} 只标的 · 6 位操盘手联合分析 <span class="src-date">数据截至 {{ as_of_date() }}</span></p>
     </div>
     <div class="btn-group">
         <button class="help-toggle" onclick="document.getElementById('helpBox').classList.toggle('show')">? 说明</button>
@@ -90,14 +90,14 @@
             </div>
             <div style="display:flex;gap:16px;font-size:12px">
                 {% if snap.pe %}
-                <span title="市盈率">PE <strong>{{ "%.1f"|format(snap.pe) }}</strong>
+                <span class="term" data-tip="市盈率 (PE)：股价 ÷ 每股收益。越低越「便宜」，但需结合行业判断。">PE <strong>{{ "%.1f"|format(snap.pe) }}</strong>
                     <span class="{{ 'green' if snap.pe < 15 else 'red' if snap.pe > 30 else 'yellow' }}">
                         {{ '偏低' if snap.pe < 15 else '偏高' if snap.pe > 30 else '适中' }}
                     </span>
                 </span>
                 {% endif %}
                 {% if snap.pb %}
-                <span title="市净率">PB <strong>{{ "%.2f"|format(snap.pb) }}</strong></span>
+                <span class="term" data-tip="市净率 (PB)：股价 ÷ 每股净资产。&lt;1 即「破净」，股价低于净资产。">PB <strong>{{ "%.2f"|format(snap.pb) }}</strong></span>
                 {% endif %}
             </div>
         </div>
@@ -106,7 +106,7 @@
         {% if thermo.pe_current %}
         <div class="thermo mt-12">
             <div class="thermo-label">
-                <span>PE 估值温度</span>
+                <span class="term" data-tip="估值温度计：用当前 PE 在历史区间中的分位衡量贵贱——分位越高越贵。">PE 估值温度</span>
                 <span>
                     当前 {{ thermo.pe_current }}
                     {% if thermo.pe_percentile is not none %}

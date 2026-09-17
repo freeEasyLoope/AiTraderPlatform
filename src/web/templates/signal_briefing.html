@@ -4,7 +4,7 @@
 <div class="section-header">
     <div>
         <h1>📡 每日信号简报</h1>
-        <p class="page-subtitle">{{ now }} · {{ symbol_count }} 只自选标的 · 6 位操盘手实时分析</p>
+        <p class="page-subtitle">{{ now }} · {{ symbol_count }} 只自选标的 · 6 位操盘手实时分析 <span class="src-date">数据截至 {{ as_of_date() }}</span></p>
     </div>
     <div class="btn-group">
         <button class="help-toggle" onclick="document.getElementById('helpBox').classList.toggle('show')">? 怎么看信号</button>
@@ -30,12 +30,12 @@
     </div>
     <div class="stat">
         <div class="value green">{{ buy_count }}</div>
-        <div class="label">买入信号</div>
+        <div class="label"><span class="term" data-tip="策略认为当前价格被低估或趋势向上，发出买入指令的信号数量。">买入信号</span></div>
         <div class="hint">个</div>
     </div>
     <div class="stat">
         <div class="value red">{{ sell_count }}</div>
-        <div class="label">卖出信号</div>
+        <div class="label"><span class="term" data-tip="策略认为应止盈、止损或趋势反转，发出卖出指令的信号数量。">卖出信号</span></div>
         <div class="hint">个</div>
     </div>
     <div class="stat">
@@ -75,8 +75,8 @@
             </span>
         </div>
         <div>
-            {% if stock.pe %}<span class="tag">PE {{ "%.1f"|format(stock.pe) }}</span>{% endif %}
-            {% if stock.pb %}<span class="tag">PB {{ "%.2f"|format(stock.pb) }}</span>{% endif %}
+            {% if stock.pe %}<span class="tag term" data-tip="市盈率 (PE)：股价 ÷ 每股收益，衡量估值高低。">PE {{ "%.1f"|format(stock.pe) }}</span>{% endif %}
+            {% if stock.pb %}<span class="tag term" data-tip="市净率 (PB)：股价 ÷ 每股净资产，&lt;1 为破净。">PB {{ "%.2f"|format(stock.pb) }}</span>{% endif %}
             <span class="badge badge-fill">{{ stock.signals|length }} 条信号</span>
         </div>
     </div>

@@ -3,6 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 主题：在样式表生效前同步设置 data-theme，避免首屏闪烁 -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('aitrader-theme');
+          if (t && t !== 'midnight') document.documentElement.setAttribute('data-theme', t);
+        } catch (e) {}
+      })();
+    </script>
     <title>AITrader · A股模拟投资</title>
     <!-- 内联 SVG 图标：项目原本没有 favicon，浏览器自动请求 /favicon.ico 会 404，
          控制台总有一条噪音错误；顺带让分享出去的链接有正经标签页图标。
@@ -46,8 +55,8 @@
             <a href="/screening" class="{{ 'active' if request.url.path.rstrip('/') == '/screening' else '' }}" aria-label="选股漏斗">
                 <span class="nav-icon">⧩</span> 漏斗
             </a>
-            <a href="/reports" class="{{ 'active' if request.url.path == '/reports' else '' }}" aria-label="交易日志与周报">
-                <span class="nav-icon">▤</span> 日志
+            <a href="/settings" class="{{ 'active' if request.url.path in ('/settings','/reports') else '' }}" aria-label="设置中心（投资设置与日志周报）">
+                <span class="nav-icon">🎚</span> 设置
             </a>
             <a href="/control" class="{{ 'active' if request.url.path == '/control' else '' }}" aria-label="策略控制台">
                 <span class="nav-icon">⚙</span> 控制
@@ -55,6 +64,13 @@
         </div>
 
         <span id="dsStatus" title="数据源状态检测中...">◌ 检测中</span>
+
+        <div class="theme-switcher" id="themeSwitcher" role="group" aria-label="主题切换">
+            <button type="button" class="theme-dot theme-midnight" data-theme-val="midnight" title="午夜黑（默认）" aria-label="午夜黑主题"></button>
+            <button type="button" class="theme-dot theme-aurora" data-theme-val="aurora" title="极光·翡翠" aria-label="极光翡翠主题"></button>
+            <button type="button" class="theme-dot theme-sunset" data-theme-val="sunset" title="落日·暖炭" aria-label="落日暖炭主题"></button>
+            <button type="button" class="theme-dot theme-lumen" data-theme-val="lumen" title="晨光·云白（浅色）" aria-label="晨光云白浅色主题"></button>
+        </div>
     </nav>
 
     <!-- #page-root 是异步导航的「内容交换边界」：站内跳转只替换它的内部 HTML。
@@ -124,6 +140,84 @@
     document.addEventListener('keydown', e => {
         if (e.key === 'Escape') { closeConfirm(); closeModal(); }
     });
+
+    // ── Toast（轻量提示，JS 动态创建后自动消失） ──
+    function showToast(msg, type) {
+        var t = document.createElement('div');
+        t.className = 'toast ' + (type === 'err' ? 'toast-err' : 'toast-ok');
+        t.textContent = msg;
+        document.body.appendChild(t);
+        setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 3200);
+    }
+
+    // ── 主题切换 ──
+    var THEME_KEY = 'aitrader-theme';
+    function applyTheme(val) {
+        if (!val || val === 'midnight') {
+            document.documentElement.removeAttribute('data-theme');
+        } else {
+            document.documentElement.setAttribute('data-theme', val);
+        }
+        try { localStorage.setItem(THEME_KEY, val || 'midnight'); } catch (e) {}
+        // 通知图表等监听方（本项目的 Chart.js 使用稳定色板，无需重绘；事件保留以便扩展）
+        window.dispatchEvent(new CustomEvent('themechange', { detail: { theme: val || 'midnight' } }));
+        var dots = document.querySelectorAll('#themeSwitcher .theme-dot');
+        for (var i = 0; i < dots.length; i++) {
+            dots[i].classList.toggle('active', dots[i].getAttribute('data-theme-val') === (val || 'midnight'));
+        }
+    }
+    (function initThemeSwitcher() {
+        var sw = document.getElementById('themeSwitcher');
+        if (!sw) return;
+        sw.addEventListener('click', function (e) {
+            var btn = e.target.closest ? e.target.closest('.theme-dot') : null;
+            if (!btn) return;
+            applyTheme(btn.getAttribute('data-theme-val'));
+        });
+        var cur = 'midnight';
+        try { cur = localStorage.getItem(THEME_KEY) || 'midnight'; } catch (e) {}
+        var dots = sw.querySelectorAll('.theme-dot');
+        for (var i = 0; i < dots.length; i++) {
+            dots[i].classList.toggle('active', dots[i].getAttribute('data-theme-val') === cur);
+        }
+    })();
+
+    // ── 名词提示（事件委托：异步加载的内容也生效，鼠标移出自动隐藏） ──
+    (function initTermTips() {
+        var tip = document.createElement('div');
+        tip.id = 'termTip';
+        tip.setAttribute('role', 'tooltip');
+        tip.style.display = 'none';
+        document.body.appendChild(tip);
+        function place(el) {
+            tip.style.display = 'block';
+            var r = el.getBoundingClientRect();
+            var tw = tip.offsetWidth, th = tip.offsetHeight;
+            var left = r.left;
+            if (left + tw > window.innerWidth - 8) left = window.innerWidth - tw - 8;
+            if (left < 8) left = 8;
+            var top = r.bottom + 8;
+            if (top + th > window.innerHeight - 8) top = r.top - th - 8;
+            tip.style.left = left + 'px';
+            tip.style.top = top + 'px';
+        }
+        function show(el) { tip.textContent = el.getAttribute('data-tip'); place(el); }
+        function hide() { tip.style.display = 'none'; }
+        document.addEventListener('mouseover', function (e) {
+            var el = e.target.closest ? e.target.closest('.term[data-tip]') : null;
+            if (el) show(el);
+        });
+        document.addEventListener('mouseout', function (e) {
+            var el = e.target.closest ? e.target.closest('.term[data-tip]') : null;
+            if (el) hide();
+        });
+        document.addEventListener('focusin', function (e) {
+            var el = e.target.closest ? e.target.closest('.term[data-tip]') : null;
+            if (el) show(el);
+        });
+        document.addEventListener('focusout', hide);
+        window.addEventListener('scroll', hide, true);
+    })();
 
     // ── Button Loading ──
     function setLoading(btn, loading, label) {

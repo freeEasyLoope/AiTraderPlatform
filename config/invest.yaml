@@ -1,0 +1,20 @@
+# 投资设置 — 自动投资 + 组合策略投资
+# 由「投资设置」页面维护；首启从包内播种，运行时落在可写数据目录。
+auto_invest:
+  enabled: true                 # 自动投资总开关（进程内调度据此决定是否每日自动交易）
+  schedule: daily               # daily=每个交易日 / weekly=每周
+  trade_time: "21:00"          # 执行时间（交易日盘后）
+  base_amount: 1000            # 每次投入基础金额（元）
+  max_positions: 6             # 全局最大持仓数
+
+portfolio:
+  enabled: false               # 组合策略投资开关（按比例分配资金到各策略）
+  rebalance: monthly           # monthly / quarterly 再平衡频率
+  risk_level: balanced         # conservative / balanced / aggressive
+  allocation:                  # 各策略目标权重（%），保存时自动归一化为 100%
+    trend_follower.TrendFollower: 20
+    mean_reversion.MeanReversion: 15
+    macro_hedger.MacroHedger: 10
+    value_hunter.ValueHunter: 20
+    dividend_collector.DividendCollector: 20
+    index_dca.IndexDca: 15

@@ -3,7 +3,8 @@
 
 <div class="flex-between" style="margin-bottom:16px">
     <h1 style="font-size:20px">策略控制台</h1>
-    <div style="display:flex;gap:8px">
+    <div style="display:flex;gap:8px;align-items:center">
+        <span class="src-date">数据截至 {{ as_of_date() }}</span>
         <button class="ghost" onclick="toggleAll()" style="font-size:12px;padding:6px 14px">展开全部</button>
         <button class="help-toggle" onclick="document.getElementById('helpBox').classList.toggle('show')">? 参数说明</button>
     </div>

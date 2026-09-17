@@ -43,3 +43,8 @@ database:
 logging:
   level: "INFO"
   file: "logs/simulation.log"
+
+# ── 功能开关 ──
+features:
+  # AI 周报（整页 LLM 生成）暂未开通；false 时 /reports 入口显示"功能暂未开通"并禁用生成。
+  ai_report_enabled: false

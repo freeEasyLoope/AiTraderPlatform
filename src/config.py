@@ -47,3 +47,26 @@ def load_screening_config() -> Dict:
         data = yaml.safe_load(f)
     return data.get("screening", {})
 
+
+def load_invest() -> Dict:
+    """加载投资设置（自动投资 + 组合策略）。首启从包内 invest.yaml 播种。"""
+    path = config_path("invest.yaml")
+    defaults: Dict = {
+        "auto_invest": {"enabled": True, "schedule": "daily", "trade_time": "21:00",
+                        "base_amount": 1000, "max_positions": 6},
+        "portfolio": {"enabled": False, "rebalance": "monthly", "risk_level": "balanced",
+                      "allocation": {}},
+    }
+    if not path.exists():
+        return defaults
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    except OSError:
+        return defaults
+    merged = {k: dict(v) for k, v in defaults.items()}
+    for sec, vals in data.items():
+        if sec in merged and isinstance(vals, dict):
+            merged[sec].update(vals)
+    return merged
+
