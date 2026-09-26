@@ -12,7 +12,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from ..deps import repo, templates, build_symbol_names
-from ...config import load_traders, load_settings
+from ...config import load_traders
 
 logger = logging.getLogger(__name__)
 
@@ -181,10 +181,12 @@ def dashboard(request: Request, group: str = ""):
     """
     traders = repo.get_traders(active_only=True)
     symbol_names = build_symbol_names()
-    settings = load_settings()
-    sim = settings["simulation"]
-    short_capital = sim["short_capital"]
-    long_capital = sim["long_capital"]
+    # 组收益率的成本基数（分母）一律以「该组操盘手真实初始资金之和」为准，
+    # 不再读 settings.yaml 写死的 short_capital/long_capital 常量——
+    # 否则增减操盘手后，组收益率分母会与真实本金偏离
+    #（本例：长线组加至 4 人，常量仍为 3 人时的 30000，收益率被凭空放大约 33%）。
+    short_capital = sum(t.initial_capital for t in traders if t.group == "short")
+    long_capital = sum(t.initial_capital for t in traders if t.group == "long")
     total_capital = short_capital + long_capital
 
     # 市场环境（走缓存，不阻塞首屏）
@@ -216,9 +218,9 @@ def dashboard(request: Request, group: str = ""):
     short_total_value = sum(t["total_value"] for t in short_traders)
     long_total_value = sum(t["total_value"] for t in long_traders)
     total_value = short_total_value + long_total_value
-    short_return = (short_total_value - short_capital) / short_capital * 100
-    long_return = (long_total_value - long_capital) / long_capital * 100
-    total_return = (total_value - total_capital) / total_capital * 100
+    short_return = ((short_total_value - short_capital) / short_capital * 100) if short_capital else 0.0
+    long_return = ((long_total_value - long_capital) / long_capital * 100) if long_capital else 0.0
+    total_return = ((total_value - total_capital) / total_capital * 100) if total_capital else 0.0
 
     # 最近交易
     recent = []

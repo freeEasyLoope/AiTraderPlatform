@@ -9,7 +9,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from ..deps import repo, templates, build_symbol_names
-from ...config import load_traders, load_settings
+from ...config import load_traders
 
 router = APIRouter()
 
@@ -18,7 +18,6 @@ router = APIRouter()
 async def strategies(request: Request):
     """策略实验室——回测、画像、参数对比。"""
     traders_config = load_traders()
-    settings = load_settings()
 
     # 策略绩效数据
     traders = repo.get_traders(active_only=True)
@@ -64,8 +63,10 @@ async def strategies(request: Request):
     # 短线 vs 长线总计
     short_total = sum(t["total_value"] for t in short_traders)
     long_total = sum(t["total_value"] for t in long_traders)
-    short_capital = settings["simulation"]["short_capital"]
-    long_capital = settings["simulation"]["long_capital"]
+    # 组成本基数以该组操盘手真实初始资金之和为准（与 dashboard 一致），
+    # 不再读 settings.yaml 写死的常量，避免增减操盘手后分母偏离真实本金。
+    short_capital = sum(t["capital"] for t in short_traders)
+    long_capital = sum(t["capital"] for t in long_traders)
 
     # 自选标的供回测
     import yaml
@@ -87,8 +88,8 @@ async def strategies(request: Request):
             "long_total": round(long_total, 2),
             "short_capital": short_capital,
             "long_capital": long_capital,
-            "short_return": round((short_total - short_capital) / short_capital * 100, 2),
-            "long_return": round((long_total - long_capital) / long_capital * 100, 2),
+            "short_return": round((short_total - short_capital) / short_capital * 100, 2) if short_capital else 0.0,
+            "long_return": round((long_total - long_capital) / long_capital * 100, 2) if long_capital else 0.0,
             "watchlist_symbols": watchlist_symbols,
             "traders_config": traders_config,
         })
