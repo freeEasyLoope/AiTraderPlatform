@@ -55,3 +55,16 @@
 5. AI 周报门控（/reports 未开通横幅）✅
 6. 主题切换（4 套 2026 调色板，`[data-theme]` 覆盖 shell 变量，Chart.js 经 `themechange` 重取色）✅
 - 验证：离线 Jinja 渲染 14 模板零错误 + 6 项断言全过（`verify_templates.py`）；进程内 TestClient 启动 + 关键路由全 200、数据源探测失败优雅降级（`boot_test.py`）。部署前用户曾要求"先解决这 6 项再部署"。
+
+## 计算约定（收益率基数）
+- **组收益率的成本基数（分母）必须取「该组活跃操盘手 `initial_capital` 之和」**，\
+  绝不读 `settings.yaml` 写死的 `short_capital/long_capital` 常量——否则增减操盘手后\
+  分母与真实本金漂移（长线组加至 4 人时，常量仍 30000 导致收益率被放大 ~33%）。\
+  `dashboard.py` 与 `strategies.py` 均已改为动态求和；`config/settings.yaml` 两常量已标记废弃。\
+  回归测试 `tests/test_web/test_group_return.py`（3 短 + 4 长受控 DB，断言长线组「初始 ¥40000」、\
+  收益率 +10.0% 而非写死 30000 分母的 +46.7%）。
+
+## 本机网络坑（2026-09-26 实测）
+- 本机沙箱**到 github.com:443 不可达**（curl 28 / Connection reset），`git push origin main` 会失败；\
+  非代码问题，稍后重试或换网络即可。本地 commit 已安全落在 main。
+- PocketBay（`pocketbay.com`）可达，部署走配对会话；**会话 10 分钟过期**，过期需重建并让用户重新点配对页。
